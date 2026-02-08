@@ -1,0 +1,266 @@
+# ============================================================================
+# paqetN .gitignore
+# ============================================================================
+
+# ============================================================================
+# Build directories
+# ============================================================================
+/build*/
+/out/
+/cmake-build-*/
+
+# ============================================================================
+# Qt generated files
+# ============================================================================
+
+# Qt Creator
+*.pro.user*
+*.qbs.user*
+CMakeLists.txt.user*
+.qtcreator/
+
+# QML cache
+*.qmlc
+*.jsc
+.qmlcache/
+
+# Qt resources
+qrc_*.cpp
+*.qm
+
+# Meta Object Compiler
+moc_*.cpp
+moc_*.h
+*.moc
+
+# UI files
+ui_*.h
+
+# RCC
+*_resource.rc
+
+# Qt preprocessor
+*_pch.h.cpp
+
+# Qt deployment
+.qt/
+
+# ============================================================================
+# CMake
+# ============================================================================
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+install_manifest.txt
+CTestTestfile.cmake
+Testing/
+*.cmake.user
+.cmake/
+
+# Ninja
+.ninja_deps
+.ninja_log
+build.ninja
+rules.ninja
+
+# ============================================================================
+# C++ build artifacts
+# ============================================================================
+
+# Object files
+*.o
+*.obj
+*.lo
+*.slo
+
+# Libraries
+*.a
+*.lib
+*.so
+*.so.*
+*.dylib
+*.dll
+*.la
+
+# Executables
+*.exe
+*.out
+*.app
+
+# Precompiled headers
+*.pch
+*.gch
+
+# Debug symbols
+*.pdb
+*.ilk
+*.idb
+*.dSYM/
+
+# ============================================================================
+# IDE and editor files
+# ============================================================================
+
+# Visual Studio
+*.sln
+*.suo
+*.vcproj
+*.vcxproj
+*.vcxproj.*
+*.opensdf
+*.sdf
+*.VC.db
+*.VC.opendb
+.vs/
+
+# Visual Studio Code
+.vscode/
+*.code-workspace
+
+# CLion
+.idea/
+cmake-build-*/
+
+# Qt Creator
+*.autosave
+
+# Xcode
+*.xcodeproj/
+*.xcworkspace/
+xcuserdata/
+
+# Cursor
+.cursor/
+
+# Claude
+.claude/
+
+# Vim
+*.swp
+*.swo
+*~
+.*.swp
+
+# Emacs
+*~
+\#*\#
+/.emacs.desktop
+/.emacs.desktop.lock
+*.elc
+.#*
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# ============================================================================
+# Temporary and backup files
+# ============================================================================
+*.autosave
+*.orig
+*.rej
+*.bak
+*.tmp
+*~
+.DS_Store
+Thumbs.db
+.directory
+*.core
+core
+!core/
+
+# ============================================================================
+# Platform-specific
+# ============================================================================
+
+# Windows
+[Dd]ebug/
+[Rr]elease/
+*.Debug
+*.Release
+*.res
+*.rc
+*.manifest
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Linux
+*.AppImage
+
+# ============================================================================
+# Project-specific
+# ============================================================================
+
+# Configuration files (contain sensitive data)
+configs.json
+
+# Log files
+*.log
+*.txt.log
+test_results.txt
+
+# Generated documentation
+/docs/html/
+/docs/latex/
+
+# Package files
+*.zip
+*.tar.gz
+*.deb
+*.rpm
+*.dmg
+
+# paqet binary (should be user-provided)
+paqet
+paqet.exe
+
+# Build artifacts
+.rcc/
+.moc/
+.obj/
+.pch/
+.uic/
+
+# ============================================================================
+# Dependencies
+# ============================================================================
+
+# Don't ignore 3rdparty - we include FluentUI
+# but ignore its build artifacts
+3rdparty/FluentUI/build*/
+3rdparty/FluentUI/.qt/
+3rdparty/FluentUI/.rcc/
+
+# ============================================================================
+# Test artifacts
+# ============================================================================
+*.coverage
+*.gcov
+*.gcda
+*.gcno
+lcov.info
+coverage/
+
+# ============================================================================
+# Package manager
+# ============================================================================
+.qpm/
+vcpkg_installed/
+conan.lock
+conanbuildinfo.*
+graph_info.json
+
+# ============================================================================
+# Misc
+# ============================================================================
+*.pyc
+__pycache__/
+tags
+TAGS
+.tags
+.tags1
+Session.vim

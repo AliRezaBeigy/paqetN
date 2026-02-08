@@ -1,0 +1,100 @@
+import QtQuick
+import QtQuick.Controls
+import QtQuick.Layouts
+import FluentUI 1.0
+
+FluPage {
+    id: logPage
+    title: qsTr("Log")
+    padding: 0
+
+    ColumnLayout {
+        anchors.fill: parent
+        anchors.margins: 10
+        spacing: 8
+
+        // Top action bar
+        FluFrame {
+            Layout.fillWidth: true
+            padding: 8
+
+            RowLayout {
+                anchors.fill: parent
+                spacing: 8
+
+                FluIconButton {
+                    iconSource: FluentIcons.Copy
+                    text: qsTr("Copy all")
+                    display: Button.TextBesideIcon
+                    onClicked: paqetController.copyToClipboard(paqetController.logText)
+                }
+                FluIconButton {
+                    iconSource: FluentIcons.Export
+                    text: qsTr("Export")
+                    display: Button.TextBesideIcon
+                    onClicked: exportLogDialog.open()
+                }
+                FluIconButton {
+                    iconSource: FluentIcons.Clear
+                    text: qsTr("Clear")
+                    display: Button.TextBesideIcon
+                    onClicked: paqetController.clearLog()
+                }
+                FluCheckBox {
+                    id: logWordWrap
+                    text: qsTr("Word wrap")
+                    checked: true
+                }
+                Item { Layout.fillWidth: true }
+            }
+        }
+
+        // Log text area
+        FluFrame {
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            padding: 0
+
+            Flickable {
+                id: logFlickable
+                anchors.fill: parent
+                anchors.margins: 4
+                clip: true
+                contentWidth: logText.width
+                contentHeight: logText.height
+                boundsBehavior: Flickable.StopAtBounds
+                
+                ScrollBar.vertical: FluScrollBar {
+                    id: verticalScrollBar
+                    anchors.right: parent.right
+                    anchors.top: parent.top
+                    anchors.bottom: parent.bottom
+                    anchors.rightMargin: 0
+                    policy: ScrollBar.AsNeeded
+                }
+
+                Text {
+                    id: logText
+                    width: logFlickable.width
+                    text: paqetController.logText
+                    wrapMode: logWordWrap.checked ? Text.Wrap : Text.NoWrap
+                    font.family: "Consolas"
+                    font.pixelSize: 14
+                    color: FluTheme.fontPrimaryColor
+                    
+                    // Update Flickable content height when text changes
+                    onTextChanged: {
+                        Qt.callLater(function() {
+                            logFlickable.contentHeight = logText.implicitHeight
+                            // Auto-scroll to bottom if user is near bottom
+                            var scrollPos = logFlickable.contentY / Math.max(1, logFlickable.contentHeight - logFlickable.height)
+                            if (scrollPos > 0.95 || scrollPos === 0 || logFlickable.contentHeight <= logFlickable.height) {
+                                logFlickable.contentY = Math.max(0, logText.implicitHeight - logFlickable.height)
+                            }
+                        })
+                    }
+                }
+            }
+        }
+    }
+}
