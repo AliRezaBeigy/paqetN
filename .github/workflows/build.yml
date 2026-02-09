@@ -2,366 +2,16 @@ name: Build and Release
 
 on:
   push:
-    branches: [main, master]
     tags:
       - 'v*'
-  pull_request:
-    branches: [main, master]
 
 jobs:
-  build-linux:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          submodules: recursive
-
-      - name: Extract version from tag
-        id: version
-        run: |
-          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
-            TAG="${{ github.ref_name }}"
-            VERSION_NAME="${TAG#v}"  # Remove 'v' prefix if present
-            echo "version_name=$VERSION_NAME" >> $GITHUB_OUTPUT
-            echo "Extracted version: $VERSION_NAME from tag: $TAG"
-          else
-            echo "version_name=0.1.0" >> $GITHUB_OUTPUT
-            echo "No tag detected, using default version: 0.1.0"
-          fi
-
-      - name: Install Qt
-        uses: jurplel/install-qt-action@v3
-        with:
-          version: '6.8.0'
-          modules: 'qt5compat qtimageformats qtshadertools'
-
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y cmake ninja-build libgl1-mesa-dev zlib1g-dev libcups2-dev libfuse2 dpkg-dev fakeroot
-
-      - name: Configure CMake
-        run: cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DAPP_VERSION=${{ steps.version.outputs.version_name }} -DCMAKE_INSTALL_PREFIX=install
-
-      - name: Build
-        run: cmake --build build
-
-      - name: Package Linux build (tag only)
-        if: startsWith(github.ref, 'refs/tags/')
-        run: |
-          # Create staging directory for installation
-          mkdir -p package
-          
-          # Install using CMake - this installs executable and QuaZip library
-          # Use DESTDIR for staged installs (standard CMake practice)
-          DESTDIR=$(pwd)/package cmake --install build
-          
-          # Find where CMake actually installed files (it may have resolved install to absolute path)
-          # Look for the apppaqetN executable to find the install root
-          EXEC_PATH=$(find package -name "apppaqetN" -type f | head -1)
-          
-          if [ -n "$EXEC_PATH" ]; then
-            # Get the directory containing bin/apppaqetN
-            BIN_DIR=$(dirname "$EXEC_PATH")
-            # Get the install root (parent of bin/)
-            INSTALL_ROOT=$(dirname "$BIN_DIR")
-            
-            # Check if INSTALL_ROOT is different from package root
-            PACKAGE_ROOT=$(pwd)/package
-            if [ "$INSTALL_ROOT" != "$PACKAGE_ROOT" ] && [ "$INSTALL_ROOT" != "package" ]; then
-              echo "Found nested install directory: $INSTALL_ROOT"
-              echo "Moving contents to package root..."
-              
-              # Move all contents from nested install to package root
-              # Use absolute path to avoid issues
-              if [ -d "$INSTALL_ROOT" ]; then
-                find "$INSTALL_ROOT" -mindepth 1 -maxdepth 1 -exec mv {} package/ \;
-                # Remove empty nested directories
-                find package -type d -empty -delete 2>/dev/null || true
-              fi
-            fi
-          elif [ -d "package/install" ]; then
-            echo "Found install directory at package/install"
-            mv package/install/* package/
-            rmdir package/install 2>/dev/null || true
-          else
-            echo "Warning: Could not locate install directory structure"
-            echo "Package contents:"
-            find package -type d | head -10
-          fi
-          
-          # Verify CMake install worked
-          if [ ! -f "package/bin/apppaqetN" ]; then
-            echo "Error: CMake install failed - executable not found!"
-            echo "Looking for executable..."
-            find package -name "apppaqetN" -type f
-            echo "Package directory structure:"
-            find package -type d | head -20
-            exit 1
-          fi
-          
-          # Verify QuaZip library is present
-          QUAZIP_SO=$(find package -name "libquazip*.so*" -type f | head -1)
-          if [ -z "$QUAZIP_SO" ]; then
-            echo "Warning: QuaZip library not found after install, searching..."
-            find build -name "libquazip*.so*" -type f
-            # Try to copy manually if CMake install missed it
-            QUAZIP_SO=$(find build -name "libquazip*.so*" -type f | head -1)
-            if [ -n "$QUAZIP_SO" ]; then
-              echo "Copying QuaZip library manually: $QUAZIP_SO"
-              mkdir -p package/lib
-              cp "$QUAZIP_SO" package/lib/
-              # Copy symlinks if any
-              find build -name "libquazip*.so*" -type l -exec cp -P {} package/lib/ \;
-            else
-              echo "Warning: QuaZip library not found - app may require system QuaZip installation"
-            fi
-          fi
-
-          # Manually copy Qt5Compat libraries...
-          echo "Manually copying Qt5Compat libraries..."
-          QT_LIB_DIR=$(qmake -query QT_INSTALL_LIBS 2>/dev/null || echo "$HOME/Qt/6.8.0/gcc_64/lib")
-          echo "Qt lib directory: $QT_LIB_DIR"
-          mkdir -p package/lib
-          cp "$QT_LIB_DIR"/libQt6Core5Compat.so* package/lib/ 2>/dev/null || echo "Warning: libQt6Core5Compat.so not found - check if qt5compat module is used"
-          cp "$QT_LIB_DIR"/libQt6Gui5Compat.so* package/lib/ 2>/dev/null || echo "Note: libQt6Gui5Compat.so not found (may not be required)"
-          
-          # Reorganize for better Linux user experience
-          # Linux users expect: extract archive -> see paqetN/ directory -> run ./paqetN
-          if [ -d "package/bin" ] || [ -d "package/lib" ] || [ -d "package/imports" ]; then
-            echo "Reorganizing package structure for better Linux user experience..."
-            mkdir -p package/paqetN
-            
-            # Move everything into paqetN directory
-            [ -d "package/bin" ] && mv package/bin package/paqetN/ 2>/dev/null || true
-            [ -d "package/lib" ] && mv package/lib package/paqetN/ 2>/dev/null || true
-            [ -d "package/imports" ] && mv package/imports package/paqetN/ 2>/dev/null || true
-            
-            # Create a simple launcher script in the paqetN directory root
-            cat > package/paqetN/paqetN << 'EOF'
-          #!/bin/bash
-          # paqetN launcher script
-          # Sets up library paths and runs the application
-
-          SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
-          # Add lib directory to library path
-          if [ -d "${SCRIPT_DIR}/lib" ]; then
-            export LD_LIBRARY_PATH="${SCRIPT_DIR}/lib${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
-          fi
-
-          # Add imports directory to QML import path
-          if [ -d "${SCRIPT_DIR}/imports" ]; then
-            export QML2_IMPORT_PATH="${SCRIPT_DIR}/imports${QML2_IMPORT_PATH:+:${QML2_IMPORT_PATH}}"
-          fi
-
-          # Run the application
-          exec "${SCRIPT_DIR}/bin/apppaqetN" "$@"
-          EOF
-            chmod +x package/paqetN/paqetN
-            
-            # Create a README with instructions
-            cat > package/paqetN/README.txt << 'EOF'
-          paqetN Linux Distribution
-          =========================
-
-          Quick Start:
-          -----------
-          1. Extract this archive
-          2. Open a terminal in the paqetN directory
-          3. Run: ./paqetN
-
-          Or run directly:
-            ./bin/apppaqetN
-
-          Requirements:
-          -------------
-          This package requires Qt6 libraries to be installed on your system.
-          Most Linux distributions provide Qt6 through their package managers.
-
-          Ubuntu/Debian:
-            sudo apt-get install qt6-base-dev qt6-declarative-dev qt6-tools
-
-          Fedora/RHEL:
-            sudo dnf install qt6-qtbase qt6-qtdeclarative qt6-qttools
-
-          Arch Linux:
-            sudo pacman -S qt6-base qt6-declarative qt6-tools
-
-          OpenSUSE:
-            sudo zypper install qt6-base-devel qt6-declarative-devel
-
-          Directory Structure:
-          -------------------
-          bin/apppaqetN    - Main executable
-          lib/              - Shared libraries (QuaZip)
-          imports/          - QML modules (FluentUI)
-          paqetN            - Launcher script (sets up paths automatically)
-          EOF
-          fi
-          
-          # List packaged files
-          echo ""
-          echo "Packaged files:"
-          find package -type f | head -30
-          echo ""
-          echo "Checking for required files:"
-          [ -f "package/paqetN/bin/apppaqetN" ] && echo "✓ apppaqetN executable" || echo "✗ apppaqetN MISSING"
-          [ -n "$(find package -name 'libquazip*.so*' -type f)" ] && echo "✓ QuaZip library" || echo "⚠ QuaZip library"
-          [ -f "package/paqetN/paqetN" ] && echo "✓ Launcher script" || echo "⚠ Launcher script"
-          [ -n "$(find package -name 'libQt6Core5Compat.so*' -type f)" ] && echo "✓ libQt6Core5Compat (Qt5 compat)" || echo "⚠ libQt6Core5Compat"
-          [ -n "$(find package -name 'libQt6Gui5Compat.so*' -type f)" ] && echo "✓ libQt6Gui5Compat (graphical Qt5 compat)" || echo "⚠ libQt6Gui5Compat"
-          
-          echo "Packaged Linux build for version ${{ steps.version.outputs.version_name }}"
-          echo "Note: Linux package requires Qt6 libraries installed on the system"
-
-      - name: Create AppImage (tag only)
-        if: startsWith(github.ref, 'refs/tags/')
-        run: |
-          # Install linuxdeploy
-          wget -q https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
-          chmod +x linuxdeploy-x86_64.AppImage
-          
-          # Install Qt plugin for linuxdeploy
-          wget -q https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage
-          chmod +x linuxdeploy-plugin-qt-x86_64.AppImage
-          
-          # Create AppDir structure
-          mkdir -p AppDir/usr/bin
-          mkdir -p AppDir/usr/lib
-          mkdir -p AppDir/usr/share/applications
-          mkdir -p AppDir/usr/share/icons/hicolor/256x256/apps
-          
-          # Copy files from package to AppDir
-          cp package/paqetN/bin/apppaqetN AppDir/usr/bin/paqetN
-          [ -d "package/paqetN/lib" ] && cp -r package/paqetN/lib/* AppDir/usr/lib/ 2>/dev/null || true
-          [ -d "package/paqetN/imports" ] && cp -r package/paqetN/imports AppDir/usr/share/ 2>/dev/null || true
-          
-          # Create desktop file
-          cat > AppDir/usr/share/applications/paqetN.desktop << 'EOF'
-          [Desktop Entry]
-          Type=Application
-          Name=paqetN
-          Comment=Proxy configuration manager
-          Exec=paqetN
-          Icon=paqetN
-          Categories=Network;
-          EOF
-          
-          # Copy icon if available
-          if [ -f "assets/icons/app_icon.png" ]; then
-            cp assets/icons/app_icon.png AppDir/usr/share/icons/hicolor/256x256/apps/paqetN.png
-          else
-            # Create a placeholder icon if none exists
-            echo "Warning: app_icon.png not found, creating placeholder"
-            touch AppDir/usr/share/icons/hicolor/256x256/apps/paqetN.png
-          fi
-          
-          # Set QML_SOURCES_PATHS for Qt plugin to find QML files
-          export QML_SOURCES_PATHS=$(pwd)/qml
-          
-          # Run linuxdeploy to bundle Qt dependencies
-          # linuxdeploy will automatically bundle Qt libraries and QML modules
-          set +e  # Don't exit on error
-          ./linuxdeploy-x86_64.AppImage \
-            --appdir AppDir \
-            --executable AppDir/usr/bin/paqetN \
-            --desktop-file AppDir/usr/share/applications/paqetN.desktop \
-            --icon-file AppDir/usr/share/icons/hicolor/256x256/apps/paqetN.png \
-            --plugin qt \
-            --output appimage 2>&1 | tee linuxdeploy.log || LINUXDEPLOY_EXIT=$?
-          set -e
-          
-          # Check if AppImage was created
-          if [ -f paqetN-*.AppImage ]; then
-            mv paqetN-*.AppImage paqetN-${{ steps.version.outputs.version_name }}-x86_64.AppImage
-            echo "Created: paqetN-${{ steps.version.outputs.version_name }}-x86_64.AppImage"
-            ls -lh paqetN-*.AppImage
-          else
-            echo "Warning: AppImage creation may have failed"
-            echo "linuxdeploy output:"
-            cat linuxdeploy.log || true
-            echo "AppDir contents:"
-            find AppDir -type f | head -20
-          fi
-          rm -f linuxdeploy.log
-
-      - name: Create DEB package (tag only)
-        if: startsWith(github.ref, 'refs/tags/')
-        run: |
-          VERSION="${{ steps.version.outputs.version_name }}"
-          DEB_DIR="paqetN_${VERSION}_amd64"
-          mkdir -p "$DEB_DIR/DEBIAN"
-          mkdir -p "$DEB_DIR/usr/bin"
-          mkdir -p "$DEB_DIR/usr/lib"
-          mkdir -p "$DEB_DIR/usr/share/applications"
-          mkdir -p "$DEB_DIR/usr/share/icons/hicolor/256x256/apps"
-          mkdir -p "$DEB_DIR/usr/share/paqetN/imports"
-          
-          # Copy files
-          cp package/paqetN/bin/apppaqetN "$DEB_DIR/usr/bin/paqetN"
-          [ -d "package/paqetN/lib" ] && cp -r package/paqetN/lib/* "$DEB_DIR/usr/lib/" 2>/dev/null || true
-          [ -d "package/paqetN/imports" ] && cp -r package/paqetN/imports/* "$DEB_DIR/usr/share/paqetN/imports/" 2>/dev/null || true
-          
-          # Create desktop file
-          cat > "$DEB_DIR/usr/share/applications/paqetN.desktop" << EOF
-          [Desktop Entry]
-          Type=Application
-          Name=paqetN
-          Comment=Proxy configuration manager
-          Exec=paqetN
-          Icon=paqetN
-          Categories=Network;
-          EOF
-          
-          # Copy icon if available
-          if [ -f "assets/icons/app_icon.png" ]; then
-            cp assets/icons/app_icon.png "$DEB_DIR/usr/share/icons/hicolor/256x256/apps/paqetN.png"
-          else
-            echo "Warning: app_icon.png not found for DEB package"
-          fi
-          
-          # Create control file
-          cat > "$DEB_DIR/DEBIAN/control" << EOF
-          Package: paqetn
-          Version: ${VERSION}
-          Section: network
-          Priority: optional
-          Architecture: amd64
-          Depends: libqt6core6, libqt6qml6, libqt6quick6, libqt6network6, libqt6gui6, libqt6widgets6
-          Maintainer: paqetN Contributors
-          Description: Proxy configuration manager
-           paqetN is a graphical application for managing proxy configurations.
-           It provides an intuitive interface for configuring and managing proxy settings.
-          EOF
-          
-          # Create postinst script to set up QML import path
-          cat > "$DEB_DIR/DEBIAN/postinst" << 'EOF'
-          #!/bin/bash
-          # Update QML import path
-          if [ -d /usr/share/paqetN/imports ]; then
-            echo "QML modules installed to /usr/share/paqetN/imports"
-          fi
-          EOF
-          chmod +x "$DEB_DIR/DEBIAN/postinst"
-          
-          # Build DEB package
-          dpkg-deb --build "$DEB_DIR" "paqetN_${VERSION}_amd64.deb"
-          echo "Created: paqetN_${VERSION}_amd64.deb"
-
-      - name: Upload Linux artifacts (tag only)
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: actions/upload-artifact@v4
-        with:
-          name: paqetN-linux
-          path: |
-            package/
-            paqetN-*.AppImage
-            paqetN_*.deb
-
   build-windows:
     runs-on: windows-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -381,13 +31,6 @@ jobs:
             echo "version_name=0.1.0" >> $GITHUB_OUTPUT
             echo "No tag detected, using default version: 0.1.0"
           fi
-
-      - name: Install Qt
-        uses: jurplel/install-qt-action@v3
-        with:
-          version: '6.8.0'
-          arch: 'win64_mingw'
-          modules: 'qt5compat qtimageformats qtshadertools'
 
       - name: Install MSYS2 MinGW toolchain
         uses: msys2/setup-msys2@v2
@@ -396,262 +39,214 @@ jobs:
           update: true
           install: >-
             mingw-w64-x86_64-gcc
-            mingw-w64-x86_64-make
+            mingw-w64-x86_64-cmake
+            mingw-w64-x86_64-ninja
+            mingw-w64-x86_64-wget
+            mingw-w64-x86_64-7zip
 
-      - name: Resolve MSYS2 MinGW paths
+      - name: Cache Qt static build
+        id: cache-qt
+        uses: actions/cache@v4
+        with:
+          path: |
+            qt-static
+          key: qt-static-6.10.2-mingw64-${{ runner.os }}
+          restore-keys: |
+            qt-static-6.10.2-mingw64-${{ runner.os }}
+
+      - name: Download Qt from release cache
+        id: release-cache
+        if: steps.cache-qt.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          echo "Actions cache missed, trying release asset cache..."
+          if gh release download qt-cache --pattern "qt-static-6.10.2-mingw64.7z" --dir . 2>/dev/null; then
+            echo "Downloaded Qt from release cache, extracting..."
+            7z x qt-static-6.10.2-mingw64.7z -o. -y
+            if [ -d "qt-static/lib/cmake/Qt6" ]; then
+              echo "release-cache-hit=true" >> $GITHUB_OUTPUT
+              echo "Qt extracted and verified successfully"
+            else
+              echo "release-cache-hit=false" >> $GITHUB_OUTPUT
+              echo "Extraction succeeded but Qt6 cmake files not found, will rebuild"
+              rm -rf qt-static
+            fi
+          else
+            echo "release-cache-hit=false" >> $GITHUB_OUTPUT
+            echo "No release cache found, will build from source"
+          fi
+
+      - name: Download and build static Qt
+        if: steps.cache-qt.outputs.cache-hit != 'true' && steps.release-cache.outputs.release-cache-hit != 'true'
         shell: msys2 {0}
         run: |
-          MINGW_BIN="$(cygpath -w /mingw64/bin)"
-          echo "$MINGW_BIN" >> $GITHUB_PATH
-          echo "MINGW_GCC=$(cygpath -w /mingw64/bin/gcc.exe)" >> $GITHUB_ENV
-          echo "MINGW_GXX=$(cygpath -w /mingw64/bin/g++.exe)" >> $GITHUB_ENV
-          echo "MINGW_MAKE=$(cygpath -w /mingw64/bin/mingw32-make.exe)" >> $GITHUB_ENV
+          QT_VERSION=6.10.2
+          QT_SRC_DIR=qt-everywhere-src-${QT_VERSION}
+          WORKSPACE_ROOT=$(pwd)
+          # Convert to Windows path for CMake — MSYS2 paths like /d/a/...
+          # get misinterpreted by CMake as literal paths (creating D:\d\a\...)
+          QT_INSTALL_PREFIX=$(cygpath -w "${WORKSPACE_ROOT}/qt-static")
 
-      - name: Verify MinGW compiler
+          wget -q https://download.qt.io/official_releases/qt/6.10/${QT_VERSION}/single/${QT_SRC_DIR}.tar.xz
+          tar -xf ${QT_SRC_DIR}.tar.xz
+          cd ${QT_SRC_DIR}
+
+          # Download and extract prebuilt libclang for Clang features
+          wget -q https://download.qt.io/development_releases/prebuilt/libclang/qt/libclang-release_18.1.7-based-windows-mingw_64.7z
+          7z x libclang-release_18.1.7-based-windows-mingw_64.7z
+          export LLVM_INSTALL_DIR=$(pwd)/libclang
+
+          # Configure Qt for static build with optimized flags
+          # Use Ninja generator for faster builds
+          # Skip modules not used by the project
+          ./configure -static -release -opensource -confirm-license \
+            -prefix "${QT_INSTALL_PREFIX}" \
+            -cmake-generator "Ninja" \
+            -skip qtwebengine -skip qtmultimedia -skip qt3d -skip qtspeech -skip qtsensors -skip qtserialbus \
+            -skip qtwebchannel -skip qtwebview -skip qtdoc -skip qttools -skip qttranslations \
+            -skip qtcharts -skip qtlocation -skip qtpositioning -skip qtserialport \
+            -skip qtbluetooth -skip qtnfc -skip qtconnectivity \
+            -skip qtgraphs -skip qtgrpc -skip qtmqtt -skip qtcoap \
+            -skip qtquicktimeline -skip qtlanguageserver \
+            -skip qtremoteobjects -skip qtscxml -skip qtscript \
+            -skip qtquick3d -skip qtquick3dphysics \
+            -skip qtdatavis3d -skip qtopcua -skip qtquickeffectmaker \
+            -nomake examples -nomake tests \
+            -qt-zlib -qt-libpng -qt-libjpeg -qt-pcre -qt-harfbuzz -qt-freetype \
+            -no-feature-system-libb2 \
+            -feature-clang \
+            -static-runtime \
+            -optimize-size || exit 1
+
+          # Build and install static Qt using ninja (faster than make)
+          JOBS=${NUMBER_OF_PROCESSORS:-4}
+          cmake --build . --parallel $JOBS || exit 1
+          cmake --install . || exit 1
+
+          # Return to workspace root
+          cd "${WORKSPACE_ROOT}"
+
+          # Verify Qt installation was successful
+          if [ ! -d "qt-static/lib/cmake/Qt6" ]; then
+            echo "Error: Qt installation failed - Qt6 cmake files not found"
+            echo "Current directory: $(pwd)"
+            echo "Contents:"
+            ls -la
+            exit 1
+          fi
+
+          echo "Qt installation verified successfully at $(pwd)/qt-static"
+
+          # Clean up Qt source tree and tarball to free disk space and prevent
+          # QML import scanner from picking up test files with broken QML
+          rm -rf "${QT_SRC_DIR}" "${QT_SRC_DIR}.tar.xz"
+
+          # Add static Qt to PATH
+          QT_STATIC_BIN=$(cygpath -w $(pwd)/qt-static/bin)
+          echo "$QT_STATIC_BIN" >> $GITHUB_PATH
+
+      - name: Compress Qt for release cache
+        if: steps.cache-qt.outputs.cache-hit != 'true' && steps.release-cache.outputs.release-cache-hit != 'true'
+        shell: msys2 {0}
+        run: |
+          echo "Compressing Qt static build for release cache..."
+          7z a -mx=9 qt-static-6.10.2-mingw64.7z qt-static/
+          ARCHIVE_SIZE=$(du -h qt-static-6.10.2-mingw64.7z | cut -f1)
+          echo "Archive size: ${ARCHIVE_SIZE}"
+
+      - name: Upload Qt to release cache
+        if: steps.cache-qt.outputs.cache-hit != 'true' && steps.release-cache.outputs.release-cache-hit != 'true'
         shell: bash
         run: |
-          echo "Checking for MinGW compiler..."
-          which g++ || echo "Warning: MinGW compiler not found in PATH"
-          g++ --version 2>/dev/null || echo "Warning: Could not get compiler version"
+          # Create the cache release if it doesn't exist, then upload
+          if ! gh release view qt-cache &>/dev/null; then
+            echo "Creating qt-cache release..."
+            gh release create qt-cache \
+              --title "Build Cache (Development)" \
+              --notes "Prebuilt static Qt for CI. This release is used as a build cache." \
+              --prerelease
+          fi
 
-      - name: Configure CMake
-        shell: bash
-        run: >
-          cmake -B build -G "MinGW Makefiles"
-          -DCMAKE_BUILD_TYPE=Release
-          -DAPP_VERSION="${{ steps.version.outputs.version_name }}"
-          -DCMAKE_INSTALL_PREFIX=install
-          -DCMAKE_C_COMPILER="${MINGW_GCC}"
-          -DCMAKE_CXX_COMPILER="${MINGW_GXX}"
-          -DCMAKE_MAKE_PROGRAM="${MINGW_MAKE}"
+          echo "Uploading Qt archive to release..."
+          gh release upload qt-cache qt-static-6.10.2-mingw64.7z --clobber
+          echo "Upload complete"
+
+      - name: Setup Qt PATH (cached)
+        if: steps.cache-qt.outputs.cache-hit == 'true' || steps.release-cache.outputs.release-cache-hit == 'true'
+        shell: msys2 {0}
+        run: |
+          QT_STATIC_BIN=$(cygpath -w $(pwd)/qt-static/bin)
+          echo "$QT_STATIC_BIN" >> $GITHUB_PATH
+
+      - name: Build QuaZip statically
+        shell: msys2 {0}
+        run: |
+          JOBS=${NUMBER_OF_PROCESSORS:-4}
+          # Convert to Windows path for CMake
+          QT_STATIC_DIR=$(cygpath -w "$(pwd)/qt-static")
+
+          # Verify Qt6 is available
+          if [ ! -d "qt-static/lib/cmake/Qt6" ]; then
+            echo "Error: Qt6 cmake directory not found"
+            echo "Contents of qt-static/lib/cmake:"
+            ls -la qt-static/lib/cmake/ 2>/dev/null || echo "qt-static directory does not exist"
+            exit 1
+          fi
+
+          echo "Qt6 found at ${QT_STATIC_DIR}"
+
+          cd 3rdparty/quazip
+          mkdir -p build
+          cd build
+          cmake .. -G "Ninja" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_SHARED_LIBS=OFF \
+            -DCMAKE_INSTALL_PREFIX="${QT_STATIC_DIR}" \
+            -DCMAKE_PREFIX_PATH="${QT_STATIC_DIR}" \
+            -DQUAZIP_QT_MAJOR_VERSION=6
+          cmake --build . --parallel $JOBS
+          cmake --install .
+
+      - name: Configure CMake for static build
+        shell: msys2 {0}
+        run: |
+          QT_STATIC_DIR=$(cygpath -w "$(pwd)/qt-static")
+          cmake -B build -G "Ninja" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DAPP_VERSION="${{ steps.version.outputs.version_name }}" \
+            -DCMAKE_INSTALL_PREFIX=install \
+            -DCMAKE_PREFIX_PATH="${QT_STATIC_DIR}" \
+            -DBUILD_SHARED_LIBS=OFF \
+            -DCMAKE_EXE_LINKER_FLAGS="-static"
 
       - name: Build
-        run: cmake --build build
-
-      - name: Package Windows build (tag only)
-        if: startsWith(github.ref, 'refs/tags/')
-        shell: bash
+        shell: msys2 {0}
         run: |
-          # Create staging directory for installation
+          JOBS=${NUMBER_OF_PROCESSORS:-4}
+          cmake --build build --parallel $JOBS
+
+      - name: Package Windows build
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: msys2 {0}
+        run: |
           mkdir -p package
-          
-          # Install using CMake - use DESTDIR for staged installs
-          DESTDIR=$(pwd)/package cmake --install build --config Release
-          
-          # Find where CMake actually installed files (it may have resolved install to absolute path)
-          # Look for the apppaqetN.exe executable to find the install root
-          EXEC_PATH=$(find package -name "apppaqetN.exe" -type f | head -1)
-          
-          if [ -n "$EXEC_PATH" ]; then
-            # Get the directory containing bin/apppaqetN.exe
-            BIN_DIR=$(dirname "$EXEC_PATH")
-            # Get the install root (parent of bin/)
-            INSTALL_ROOT=$(dirname "$BIN_DIR")
-            
-            # Check if INSTALL_ROOT is different from package root
-            PACKAGE_ROOT=$(pwd)/package
-            if [ "$INSTALL_ROOT" != "$PACKAGE_ROOT" ] && [ "$INSTALL_ROOT" != "package" ]; then
-              echo "Found nested install directory: $INSTALL_ROOT"
-              echo "Moving contents to package root..."
-              
-              # Move all contents from nested install to package root
-              # Use absolute path to avoid issues
-              if [ -d "$INSTALL_ROOT" ]; then
-                find "$INSTALL_ROOT" -mindepth 1 -maxdepth 1 -exec mv {} package/ \;
-                # Remove empty nested directories
-                find package -type d -empty -delete 2>/dev/null || true
-              fi
-            fi
-          elif [ -d "package/install" ]; then
-            echo "Found install directory at package/install"
-            mv package/install/* package/
-            rmdir package/install 2>/dev/null || true
-          else
-            echo "Warning: Could not locate install directory structure"
-            echo "Package contents:"
-            find package -type d | head -10
-          fi
-          
-          # Verify CMake install worked
-          if [ ! -f "package/bin/apppaqetN.exe" ]; then
-            echo "Error: CMake install failed - executable not found!"
-            echo "Looking for executable..."
-            find package -name "apppaqetN.exe" -type f
-            echo "Package directory structure:"
-            find package -type d | head -20
-            exit 1
-          fi
-          
-          # Move files to package root for cleaner structure (Windows convention)
-          mv package/bin/* package/ 2>/dev/null || true
-          mv package/lib/*.dll package/ 2>/dev/null || true
-          rmdir package/bin package/lib 2>/dev/null || true
-          
-          # Verify QuaZip DLL is present
-          if [ ! -f "package/libquazip1-qt6.dll" ]; then
-            echo "Warning: QuaZip DLL not found after install, searching..."
-            find build -name "libquazip1-qt6.dll" -type f
-            # Try to copy manually if CMake install missed it
-            QUAZIP_DLL=$(find build -name "libquazip1-qt6.dll" -type f | head -1)
-            if [ -n "$QUAZIP_DLL" ]; then
-              echo "Copying QuaZip DLL manually: $QUAZIP_DLL"
-              cp "$QUAZIP_DLL" package/
-            else
-              echo "Error: QuaZip DLL not found anywhere!"
-              exit 1
-            fi
-          fi
-          
-          # Get Qt installation path - install-qt-action sets up PATH
-          if command -v qmake &> /dev/null; then
-            QMAKE_PATH=$(which qmake)
-            QT_BIN=$(dirname "$QMAKE_PATH")
-            echo "Qt bin directory: $QT_BIN"
-            
-            # Use windeployqt to bundle Qt DLLs and dependencies
-            WINDEPLOYQT="$QT_BIN/windeployqt.exe"
-            if [ -f "$WINDEPLOYQT" ]; then
-              echo "Running windeployqt to bundle Qt dependencies..."
-              # Point to source qml directory for QML module discovery
-              # --no-opengl-sw: Skip OpenGL software rasterizer (optional, may not be installed)
-              # --no-translations: Skip translation files
-              # --compiler-runtime: Include MinGW runtime DLLs
-              # Note: We install qtshadertools module so Qt6ShaderTools.dll should be available
-              # Allow windeployqt to fail on optional dependencies - we'll check if essential DLLs were copied
-              set +e  # Don't exit on error
-              "$WINDEPLOYQT" --qmldir qml --no-translations --no-opengl-sw --compiler-runtime package/apppaqetN.exe > windeployqt.log 2>&1
-              WINDEPLOYQT_EXIT=$?
-              
-              # Filter out non-critical errors from the log for display
-              # Show the log but filter out Qt6ShaderTools warnings if they're not critical
-              if grep -q "Qt6ShaderTools.dll" windeployqt.log; then
-                echo "Note: Qt6ShaderTools.dll warnings detected (checking if critical DLLs are present)..."
-                grep -v "Qt6ShaderTools.dll" windeployqt.log | grep -v "Cannot open.*Qt6ShaderTools" || true
-              else
-                cat windeployqt.log || true
-              fi
-              set -e  # Re-enable exit on error
-              
-              # Check if critical DLLs were copied (windeployqt may have partial success despite errors)
-              if [ -f "package/Qt6Core.dll" ] && [ -f "package/Qt6Quick.dll" ]; then
-                echo "✓ windeployqt completed successfully (critical Qt DLLs present)"
-                if [ $WINDEPLOYQT_EXIT -ne 0 ]; then
-                  echo "Note: windeployqt reported warnings, but core DLLs are present"
-                fi
-              else
-                echo "Error: Critical Qt DLLs missing after windeployqt"
-                echo "windeployqt exit code: $WINDEPLOYQT_EXIT"
-                echo "Full windeployqt output:"
-                cat windeployqt.log || true
-                echo ""
-                echo "Qt DLLs found in package:"
-                find package -name "Qt*.dll" -type f | head -10 || echo "No Qt DLLs found"
-                echo ""
-                echo "Checking Qt installation:"
-                ls -la "$QT_BIN/Qt6Core.dll" 2>/dev/null || echo "Qt6Core.dll not found in Qt bin directory"
-                ls -la "$QT_BIN/Qt6ShaderTools.dll" 2>/dev/null || echo "Qt6ShaderTools.dll not found in Qt bin directory (may be optional)"
-                echo ""
-                echo "Package directory contents:"
-                ls -la package/ | head -20
-                exit 1
-              fi
-              rm -f windeployqt.log
-              
-              # Copy QML files - windeployqt should have created qml/paqetN/ directory
-              if [ -d "package/qml/paqetN" ]; then
-                echo "✓ QML files found in package/qml/paqetN"
-              else
-                echo "Warning: QML files not found in package/qml/paqetN, checking build directory..."
-                # Check if QML files exist in build directory
-                if [ -d "build/qml/paqetN" ]; then
-                  echo "Copying QML files from build directory..."
-                  mkdir -p package/qml
-                  cp -r build/qml/paqetN package/qml/
-                  echo "✓ Copied QML files from build directory"
-                elif [ -d "qml" ]; then
-                  echo "Copying QML files from source directory..."
-                  mkdir -p package/qml
-                  cp -r qml package/
-                  echo "✓ Copied QML files from source directory"
-                else
-                  echo "Error: QML files not found in build or source directory!"
-                  find . -name "paqetN" -type d | head -5
-                  exit 1
-                fi
-              fi
-            else
-              echo "Warning: windeployqt.exe not found at $WINDEPLOYQT"
-              echo "Qt tools available:"
-              ls -la "$QT_BIN" | grep -E "(windeployqt|qmake)" || true
-            fi
-          else
-            echo "Warning: qmake not found in PATH"
-            echo "PATH: $PATH"
-            exit 1
-          fi
+          cmake --install build --config Release --prefix "$(cygpath -w "$(pwd)/package")"
+          mv package/bin/apppaqetN.exe package/paqetN.exe
+          echo "Single executable created: package/paqetN.exe"
 
-          # Manually copy Qt5Compat DLLs (for compatibility features like GraphicalEffects in QML)
-          echo "Manually copying Qt5Compat DLLs..."
-          if [ -f "$QT_BIN/Qt6Core5Compat.dll" ]; then
-            cp "$QT_BIN/Qt6Core5Compat.dll" package/
-          else
-            echo "Warning: Qt6Core5Compat.dll not found in Qt bin - check if qt5compat module is used"
-          fi
-          if [ -f "$QT_BIN/Qt6Gui5Compat.dll" ]; then
-            cp "$QT_BIN/Qt6Gui5Compat.dll" package/
-          else
-            echo "Note: Qt6Gui5Compat.dll not found (may not be required if no graphical compat features used)"
-          fi
-          
-          # Clean up any unnecessary files
-          find package -name "*.lib" -delete 2>/dev/null || true
-          find package -name "*.pdb" -delete 2>/dev/null || true
-          find package -name "*.exp" -delete 2>/dev/null || true
-          
-          # Verify critical DLLs are present
-          echo ""
-          echo "Packaged files:"
-          ls -lh package/ | head -20
-          echo ""
-          echo "Checking for required DLLs:"
-          [ -f "package/apppaqetN.exe" ] && echo "✓ apppaqetN.exe" || echo "✗ apppaqetN.exe MISSING"
-          [ -f "package/libquazip1-qt6.dll" ] && echo "✓ libquazip1-qt6.dll" || echo "✗ libquazip1-qt6.dll MISSING"
-          [ -f "package/Qt6Core.dll" ] && echo "✓ Qt6Core.dll" || (echo "✗ Qt6Core.dll MISSING" && find package -name "Qt*.dll" | head -5)
-          [ -f "package/Qt6Core5Compat.dll" ] && echo "✓ Qt6Core5Compat.dll" || echo "⚠ Qt6Core5Compat.dll (required for Qt5 compat)"
-          echo ""
-          echo "Checking for QML files:"
-          if [ -d "package/qml/paqetN" ]; then
-            echo "✓ QML files found in package/qml/paqetN"
-            ls -la package/qml/paqetN/ | head -10
-          else
-            echo "✗ QML files MISSING in package/qml/paqetN"
-            echo "Package directory structure:"
-            find package -type d | head -10
-          fi
-          [ -f "package/Qt6Gui5Compat.dll" ] && echo "✓ Qt6Gui5Compat.dll" || echo "⚠ Qt6Gui5Compat.dll (for graphical Qt5 compat)"
-          
-          echo "Packaged Windows build for version ${{ steps.version.outputs.version_name }}"
-
-      - name: Upload Windows artifacts (tag only)
+      - name: Upload Windows artifact
         if: startsWith(github.ref, 'refs/tags/')
         uses: actions/upload-artifact@v4
         with:
           name: paqetN-windows
-          path: package/
+          path: package/paqetN.exe
 
-  build-macos:
-    strategy:
-      matrix:
-        include:
-          - arch: x86_64
-            qt_arch: mac_x64
-            runner: macos-15-intel
-            suffix: intel
-          - arch: arm64
-            qt_arch: clang_64
-            runner: macos-latest
-            suffix: arm64
-    runs-on: ${{ matrix.runner }}
+  build-linux:
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -671,336 +266,219 @@ jobs:
             echo "No tag detected, using default version: 0.1.0"
           fi
 
-      - name: Install Qt
-        uses: jurplel/install-qt-action@v3
-        with:
-          version: '6.8.0'
-          arch: ${{ matrix.qt_arch }}
-          modules: 'qt5compat qtimageformats'
-
-      - name: Configure CMake
+      - name: Install system dependencies
         run: |
-          cmake -B build \
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake ninja-build pkg-config python3 \
+            libgl1-mesa-dev libglib2.0-dev libfontconfig1-dev \
+            libxkbcommon-dev libxkbcommon-x11-dev \
+            libxcb1-dev libxcb-cursor-dev libxcb-glx0-dev \
+            libxcb-keysyms1-dev libxcb-image0-dev libxcb-shm0-dev \
+            libxcb-icccm4-dev libxcb-sync-dev libxcb-xfixes0-dev \
+            libxcb-shape0-dev libxcb-randr0-dev libxcb-render-util0-dev \
+            libxcb-util-dev libxcb-xinerama0-dev libxcb-xkb-dev \
+            libx11-xcb-dev libxext-dev libxfixes-dev libxi-dev libxrender-dev \
+            libatspi2.0-dev libvulkan-dev libdrm-dev libgbm-dev \
+            libwayland-dev \
+            zlib1g-dev
+
+      - name: Cache Qt static build
+        id: cache-qt
+        uses: actions/cache@v4
+        with:
+          path: |
+            qt-static
+          key: qt-static-6.10.2-linux-amd64-${{ runner.os }}
+          restore-keys: |
+            qt-static-6.10.2-linux-amd64-${{ runner.os }}
+
+      - name: Download Qt from release cache
+        id: release-cache
+        if: steps.cache-qt.outputs.cache-hit != 'true'
+        run: |
+          echo "Actions cache missed, trying release asset cache..."
+          if gh release download qt-cache --pattern "qt-static-6.10.2-linux-amd64.tar.zst" --dir . 2>/dev/null; then
+            echo "Downloaded Qt from release cache, extracting..."
+            tar --zstd -xf qt-static-6.10.2-linux-amd64.tar.zst
+            if [ -d "qt-static/lib/cmake/Qt6" ]; then
+              echo "release-cache-hit=true" >> $GITHUB_OUTPUT
+              echo "Qt extracted and verified successfully"
+            else
+              echo "release-cache-hit=false" >> $GITHUB_OUTPUT
+              echo "Extraction succeeded but Qt6 cmake files not found, will rebuild"
+              rm -rf qt-static
+            fi
+          else
+            echo "release-cache-hit=false" >> $GITHUB_OUTPUT
+            echo "No release cache found, will build from source"
+          fi
+
+      - name: Download and build static Qt
+        if: steps.cache-qt.outputs.cache-hit != 'true' && steps.release-cache.outputs.release-cache-hit != 'true'
+        run: |
+          QT_VERSION=6.10.2
+          QT_SRC_DIR=qt-everywhere-src-${QT_VERSION}
+          QT_INSTALL_PREFIX=$(pwd)/qt-static
+          
+          wget -q https://download.qt.io/official_releases/qt/6.10/${QT_VERSION}/single/${QT_SRC_DIR}.tar.xz
+          tar -xf ${QT_SRC_DIR}.tar.xz
+          cd ${QT_SRC_DIR}
+          
+          # Configure Qt for static build
+          ./configure -static -release -opensource -confirm-license \
+            -prefix "${QT_INSTALL_PREFIX}" \
+            -cmake-generator "Ninja" \
+            -xcb \
+            -skip qtwebengine -skip qtmultimedia -skip qt3d -skip qtspeech -skip qtsensors -skip qtserialbus \
+            -skip qtwebchannel -skip qtwebview -skip qtdoc -skip qttools -skip qttranslations \
+            -skip qtcharts -skip qtlocation -skip qtpositioning -skip qtserialport \
+            -skip qtbluetooth -skip qtnfc -skip qtconnectivity \
+            -skip qtgraphs -skip qtgrpc -skip qtmqtt -skip qtcoap \
+            -skip qtquicktimeline -skip qtlanguageserver \
+            -skip qtremoteobjects -skip qtscxml -skip qtscript \
+            -skip qtquick3d -skip qtquick3dphysics \
+            -skip qtdatavis3d -skip qtopcua -skip qtquickeffectmaker \
+            -nomake examples -nomake tests \
+            -qt-zlib -qt-libpng -qt-libjpeg -qt-pcre -qt-harfbuzz -qt-freetype \
+            -no-feature-system-libb2 \
+            -optimize-size || exit 1
+          
+          # Build and install
+          JOBS=$(nproc)
+          cmake --build . --parallel $JOBS || exit 1
+          cmake --install . || exit 1
+          
+          # Return to workspace root
+          cd ..
+          
+          # Verify Qt installation
+          if [ ! -d "qt-static/lib/cmake/Qt6" ]; then
+            echo "Error: Qt installation failed - Qt6 cmake files not found"
+            ls -la
+            exit 1
+          fi
+          
+          echo "Qt installation verified successfully"
+          
+          # Clean up source tree
+          rm -rf "${QT_SRC_DIR}" "${QT_SRC_DIR}.tar.xz"
+
+      - name: Compress Qt for release cache
+        if: steps.cache-qt.outputs.cache-hit != 'true' && steps.release-cache.outputs.release-cache-hit != 'true'
+        run: |
+          echo "Compressing Qt static build for release cache..."
+          tar --zstd -cf qt-static-6.10.2-linux-amd64.tar.zst qt-static/
+          ARCHIVE_SIZE=$(du -h qt-static-6.10.2-linux-amd64.tar.zst | cut -f1)
+          echo "Archive size: ${ARCHIVE_SIZE}"
+
+      - name: Upload Qt to release cache
+        if: steps.cache-qt.outputs.cache-hit != 'true' && steps.release-cache.outputs.release-cache-hit != 'true'
+        run: |
+          # Create the cache release if it doesn't exist, then upload
+          if ! gh release view qt-cache &>/dev/null; then
+            echo "Creating qt-cache release..."
+            gh release create qt-cache \
+              --title "Build Cache (Development)" \
+              --notes "Prebuilt static Qt for CI. This release is used as a build cache." \
+              --prerelease
+          fi
+          
+          echo "Uploading Qt archive to release..."
+          gh release upload qt-cache qt-static-6.10.2-linux-amd64.tar.zst --clobber
+          echo "Upload complete"
+
+      - name: Build QuaZip statically
+        run: |
+          JOBS=$(nproc)
+          QT_STATIC_DIR=$(pwd)/qt-static
+          
+          if [ ! -d "qt-static/lib/cmake/Qt6" ]; then
+            echo "Error: Qt6 cmake directory not found"
+            ls -la qt-static/lib/cmake/ 2>/dev/null || echo "qt-static directory does not exist"
+            exit 1
+          fi
+          
+          echo "Qt6 found at ${QT_STATIC_DIR}"
+          
+          cd 3rdparty/quazip
+          mkdir -p build
+          cd build
+          cmake .. -G "Ninja" \
             -DCMAKE_BUILD_TYPE=Release \
-            -DAPP_VERSION=${{ steps.version.outputs.version_name }} \
+            -DBUILD_SHARED_LIBS=OFF \
+            -DCMAKE_INSTALL_PREFIX="${QT_STATIC_DIR}" \
+            -DCMAKE_PREFIX_PATH="${QT_STATIC_DIR}" \
+            -DQUAZIP_QT_MAJOR_VERSION=6
+          cmake --build . --parallel $JOBS
+          cmake --install .
+
+      - name: Configure CMake for static build
+        run: |
+          QT_STATIC_DIR=$(pwd)/qt-static
+          cmake -B build -G "Ninja" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DAPP_VERSION="${{ steps.version.outputs.version_name }}" \
             -DCMAKE_INSTALL_PREFIX=install \
-            -DCMAKE_OSX_ARCHITECTURES=${{ matrix.arch }}
+            -DCMAKE_PREFIX_PATH="${QT_STATIC_DIR}" \
+            -DBUILD_SHARED_LIBS=OFF \
+            -DCMAKE_EXE_LINKER_FLAGS="-static-libgcc -static-libstdc++"
 
       - name: Build
-        run: cmake --build build
+        run: |
+          JOBS=$(nproc)
+          cmake --build build --parallel $JOBS
 
-      - name: Package macOS app bundle (tag only)
+      - name: Package Linux build
         if: startsWith(github.ref, 'refs/tags/')
         run: |
-          cd build
-          
-          # Verify app bundle exists
-          if [ ! -d "apppaqetN.app" ]; then
-            echo "Error: apppaqetN.app not found!"
-            ls -la
-            exit 1
-          fi
-          
-          # Verify executable exists
-          if [ ! -f "apppaqetN.app/Contents/MacOS/apppaqetN" ]; then
-            echo "Error: apppaqetN executable not found in app bundle!"
-            find apppaqetN.app -type f
-            exit 1
-          fi
-          
-          # Ensure QuaZip library is in the app bundle
-          # CMake install should have put it in Contents/Frameworks or Contents/MacOS
-          QUAZIP_DYLIB=$(find apppaqetN.app -name "libquazip*.dylib" -type f | head -1)
-          if [ -z "$QUAZIP_DYLIB" ]; then
-            echo "Warning: QuaZip library not found in app bundle, searching build directory..."
-            QUAZIP_DYLIB=$(find . -name "libquazip*.dylib" -type f | head -1)
-            if [ -n "$QUAZIP_DYLIB" ]; then
-              echo "Copying QuaZip library to app bundle: $QUAZIP_DYLIB"
-              mkdir -p apppaqetN.app/Contents/Frameworks
-              cp "$QUAZIP_DYLIB" apppaqetN.app/Contents/Frameworks/
-              # Update library paths using install_name_tool
-              install_name_tool -id "@executable_path/../Frameworks/$(basename "$QUAZIP_DYLIB")" \
-                apppaqetN.app/Contents/Frameworks/$(basename "$QUAZIP_DYLIB")
-              install_name_tool -change "$(otool -L apppaqetN.app/Contents/MacOS/apppaqetN | grep quazip | awk '{print $1}')" \
-                "@executable_path/../Frameworks/$(basename "$QUAZIP_DYLIB")" \
-                apppaqetN.app/Contents/MacOS/apppaqetN
-            else
-              echo "Warning: QuaZip library not found - app may not work correctly"
-            fi
-          fi
-          
-          # Use macdeployqt to bundle Qt frameworks and dependencies
-          if command -v macdeployqt &> /dev/null; then
-            MACDEPLOYQT=$(which macdeployqt)
-            echo "Running macdeployqt to bundle Qt frameworks..."
-            "$MACDEPLOYQT" apppaqetN.app -qmldir=../qml -always-overwrite
-            echo "macdeployqt completed"
-          else
-            echo "Warning: macdeployqt not found in PATH"
-            echo "Qt frameworks may not be bundled - app may require Qt installation"
-            echo "PATH: $PATH"
-            # Try to find it in Qt installation
-            if command -v qmake &> /dev/null; then
-              QMAKE_PATH=$(which qmake)
-              QT_BIN=$(dirname "$QMAKE_PATH")
-              MACDEPLOYQT="$QT_BIN/macdeployqt"
-              if [ -f "$MACDEPLOYQT" ]; then
-                echo "Found macdeployqt at: $MACDEPLOYQT"
-                "$MACDEPLOYQT" apppaqetN.app -qmldir=../qml -always-overwrite
-              fi
-            fi
-          fi
+          mkdir -p package
+          cmake --install build --config Release --prefix "$(pwd)/package"
+          mv package/bin/apppaqetN package/paqetN
+          strip package/paqetN
+          chmod +x package/paqetN
+          echo "Single executable created: package/paqetN"
+          ls -lh package/paqetN
 
-          # Manually copy Qt5Compat frameworks if not bundled (for compatibility features like GraphicalEffects in QML)
-          echo "Manually copying Qt5Compat frameworks..."
-          QT_LIB_DIR=$(qmake -query QT_INSTALL_LIBS 2>/dev/null || echo "$(dirname "$(which macdeployqt || echo "$MACDEPLOYQT")")/../lib")
-          echo "Qt lib directory: $QT_LIB_DIR"
-          for compat in Qt6Core5Compat Qt6Gui5Compat; do
-            FRAMEWORK_PATH="$QT_LIB_DIR/$compat.framework"
-            if [ -d "$FRAMEWORK_PATH" ]; then
-              mkdir -p apppaqetN.app/Contents/Frameworks
-              cp -R "$FRAMEWORK_PATH" apppaqetN.app/Contents/Frameworks/
-              FRAMEWORK_LIB="$compat.framework/Versions/A/$compat"
-              install_name_tool -id "@executable_path/../Frameworks/$FRAMEWORK_LIB" \
-                "apppaqetN.app/Contents/Frameworks/$FRAMEWORK_LIB" || true
-              # Update executable rpath
-              otool_output=$(otool -L apppaqetN.app/Contents/MacOS/apppaqetN | grep "$compat" | awk '{print $1}' | head -1)
-              if [ -n "$otool_output" ]; then
-                install_name_tool -change "$otool_output" \
-                  "@executable_path/../Frameworks/$FRAMEWORK_LIB" \
-                  apppaqetN.app/Contents/MacOS/apppaqetN || true
-              fi
-            else
-              echo "Note: $compat.framework not found"
-            fi
-          done
-          
-          # Verify app bundle structure
-          echo ""
-          echo "App bundle structure:"
-          find apppaqetN.app -type f | head -30
-          echo ""
-          echo "Checking for required components:"
-          [ -f "apppaqetN.app/Contents/MacOS/apppaqetN" ] && echo "✓ Executable" || echo "✗ Executable MISSING"
-          [ -n "$(find apppaqetN.app -name 'libquazip*.dylib' -type f)" ] && echo "✓ QuaZip library" || echo "⚠ QuaZip library"
-          [ -d "apppaqetN.app/Contents/Frameworks" ] && echo "✓ Frameworks directory" || echo "⚠ Frameworks directory"
-          [ -n "$(find apppaqetN.app/Contents/Frameworks -name 'Qt*.framework' -type d 2>/dev/null)" ] && echo "✓ Qt frameworks" || echo "⚠ Qt frameworks (may require system Qt)"
-          [ -d "apppaqetN.app/Contents/Frameworks/Qt6Core5Compat.framework" ] && echo "✓ Qt6Core5Compat (Qt5 compat)" || echo "⚠ Qt6Core5Compat"
-          [ -d "apppaqetN.app/Contents/Frameworks/Qt6Gui5Compat.framework" ] && echo "✓ Qt6Gui5Compat (graphical Qt5 compat)" || echo "⚠ Qt6Gui5Compat"
-          
-          echo "macOS app bundle packaged for version ${{ steps.version.outputs.version_name }}"
-          
-          # Rename app bundle to paqetN.app for consistency (macOS users expect this)
-          if [ -d "apppaqetN.app" ]; then
-            mv apppaqetN.app paqetN.app
-            echo "Renamed app bundle to paqetN.app for better macOS user experience"
-            
-            # Update executable name in Info.plist if needed (optional, but good practice)
-            if [ -f "paqetN.app/Contents/Info.plist" ]; then
-              # The executable name stays as apppaqetN internally, but bundle name is now paqetN.app
-              echo "App bundle renamed successfully"
-            fi
-          fi
-
-      - name: Create DMG (tag only)
-        if: startsWith(github.ref, 'refs/tags/')
-        run: |
-          cd build
-          VERSION="${{ steps.version.outputs.version_name }}"
-          
-          # Verify app bundle exists
-          if [ ! -d "paqetN.app" ]; then
-            echo "Error: paqetN.app not found!"
-            ls -la
-            exit 1
-          fi
-          
-          # Create DMG using hdiutil
-          # Create a temporary directory for DMG contents
-          DMG_DIR="dmg_contents"
-          mkdir -p "$DMG_DIR"
-          
-          # Copy app bundle to DMG directory
-          cp -R paqetN.app "$DMG_DIR/"
-          
-          # Create Applications symlink (standard macOS DMG convention)
-          ln -s /Applications "$DMG_DIR/Applications"
-          
-          # Create DMG with architecture suffix
-          DMG_NAME="paqetN-${VERSION}-macos-${{ matrix.suffix }}.dmg"
-          hdiutil create -volname "paqetN" -srcfolder "$DMG_DIR" -ov -format UDZO "$DMG_NAME"
-          
-          echo "Created: $DMG_NAME"
-          ls -lh "$DMG_NAME"
-          
-          # Clean up
-          rm -rf "$DMG_DIR"
-
-      - name: Upload macOS artifacts (tag only)
+      - name: Upload Linux artifact
         if: startsWith(github.ref, 'refs/tags/')
         uses: actions/upload-artifact@v4
         with:
-          name: paqetN-macos-${{ matrix.suffix }}
-          path: |
-            build/paqetN.app
-            build/paqetN-*.dmg
+          name: paqetN-linux
+          path: package/paqetN
 
   release:
-    needs: [build-linux, build-windows, build-macos]
     if: startsWith(github.ref, 'refs/tags/')
+    needs: [ build-windows, build-linux ]
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ github.ref }}
-
-      - name: Extract changelog for tag
-        run: |
-          TAG="${{ github.ref_name }}"
-          # Extract the section for this tag from CHANGELOG.md
-          awk -v tag="$TAG" '
-            $0 ~ "^## \\[" tag "\\]" { found=1; print; next }
-            found && $0 ~ /^## / { exit }
-            found { print }
-          ' CHANGELOG.md > release_notes.md
-
-          # If no specific changelog found, use a default message
-          if [ ! -s release_notes.md ]; then
-            echo "Release $TAG" > release_notes.md
-            echo "" >> release_notes.md
-            echo "See [CHANGELOG.md](CHANGELOG.md) for details." >> release_notes.md
-          fi
-
-      - name: Download Linux artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: paqetN-linux
-          path: artifacts/linux
-
-      - name: Download Windows artifacts
+      - name: Download Windows artifact
         uses: actions/download-artifact@v4
         with:
           name: paqetN-windows
           path: artifacts/windows
 
-      - name: Download macOS artifacts
+      - name: Download Linux artifact
         uses: actions/download-artifact@v4
         with:
-          pattern: paqetN-macos-*
-          merge-multiple: true
-          path: artifacts/macos
-
-      - name: Create release archives
-        run: |
-          cd artifacts
-
-          # Linux archive - ensure clean structure
-          # Users extract and see paqetN/ directory with everything inside
-          if [ -d "linux/paqetN" ]; then
-            tar -czf paqetN-linux-${{ github.ref_name }}.tar.gz -C linux paqetN
-          else
-            # Fallback: archive everything as-is
-            tar -czf paqetN-linux-${{ github.ref_name }}.tar.gz -C linux .
-          fi
-          
-          # Verify Linux archive structure
-          echo "Linux archive contents:"
-          tar -tzf paqetN-linux-${{ github.ref_name }}.tar.gz | head -10
-
-          # Windows archive
-          cd windows
-          zip -r ../paqetN-windows-${{ github.ref_name }}.zip .
-          cd ..
-
-          # macOS: Handle both Intel and ARM64 builds
-          # Find all DMG files (they may be in subdirectories from merged artifacts)
-          DMG_COUNT=0
-          while IFS= read -r dmg; do
-            # Extract architecture suffix from filename
-            ARCH_SUFFIX=$(echo "$dmg" | sed -n 's/.*-\(intel\|arm64\)\.dmg/\1/p' || echo "")
-            if [ -n "$ARCH_SUFFIX" ]; then
-              cp "$dmg" "paqetN-macos-${{ github.ref_name }}-${ARCH_SUFFIX}.dmg"
-              echo "Copied DMG: paqetN-macos-${{ github.ref_name }}-${ARCH_SUFFIX}.dmg"
-              DMG_COUNT=$((DMG_COUNT + 1))
-            else
-              # Try to determine architecture from directory structure
-              if echo "$dmg" | grep -q "intel\|x86_64"; then
-                cp "$dmg" "paqetN-macos-${{ github.ref_name }}-intel.dmg"
-                DMG_COUNT=$((DMG_COUNT + 1))
-              elif echo "$dmg" | grep -q "arm64\|arm"; then
-                cp "$dmg" "paqetN-macos-${{ github.ref_name }}-arm64.dmg"
-                DMG_COUNT=$((DMG_COUNT + 1))
-              else
-                cp "$dmg" .
-                DMG_COUNT=$((DMG_COUNT + 1))
-              fi
-            fi
-          done < <(find macos -name "paqetN-*.dmg" -type f)
-          
-          # Also look for app bundles if DMG not found
-          if [ $DMG_COUNT -eq 0 ]; then
-            # Look for app bundles in subdirectories (Intel/ARM64)
-            for arch_dir in macos/*/; do
-              if [ -d "$arch_dir" ] && [ -d "$arch_dir/paqetN.app" ]; then
-                ARCH_NAME=$(basename "$arch_dir")
-                # Map directory names to architecture suffixes
-                if echo "$ARCH_NAME" | grep -q "intel\|x86_64"; then
-                  ARCH_SUFFIX="intel"
-                elif echo "$ARCH_NAME" | grep -q "arm64\|arm"; then
-                  ARCH_SUFFIX="arm64"
-                else
-                  ARCH_SUFFIX="$ARCH_NAME"
-                fi
-                tar -czf "paqetN-macos-${{ github.ref_name }}-${ARCH_SUFFIX}.tar.gz" -C "$arch_dir" paqetN.app
-                echo "Created tar.gz for $ARCH_SUFFIX"
-              fi
-            done
-            
-            # Fallback: single app bundle
-            if [ -d "macos/paqetN.app" ]; then
-              tar -czf paqetN-macos-${{ github.ref_name }}.tar.gz -C macos paqetN.app
-            elif [ -d "macos/apppaqetN.app" ]; then
-              tar -czf paqetN-macos-${{ github.ref_name }}.tar.gz -C macos apppaqetN.app
-            fi
-          fi
-          
-          # Verify macOS archives
-          echo "macOS release files:"
-          ls -lh paqetN-macos-*.* 2>/dev/null || true
-
-      - name: List release files
-        id: release_files
-        run: |
-          cd artifacts
-          shopt -s nullglob
-          # Include all distribution formats
-          archives=(*.AppImage *.deb *.dmg *.tar.gz *.zip)
-
-          if [ ${#archives[@]} -eq 0 ]; then
-            echo "::error::No release archives found"
-            ls -la
-            exit 1
-          fi
-
-          echo "Files to attach:"
-          printf '%s\n' "${archives[@]}" | sort
-
-          echo "files<<EOF" >> $GITHUB_OUTPUT
-          for file in "${archives[@]}"; do
-            echo "artifacts/$file" >> $GITHUB_OUTPUT
-          done
-          echo "EOF" >> $GITHUB_OUTPUT
+          name: paqetN-linux
+          path: artifacts/linux
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          body_path: release_notes.md
-          files: ${{ steps.release_files.outputs.files }}
-          generate_release_notes: false
-          draft: false
-          prerelease: ${{ contains(github.ref_name, 'alpha') || contains(github.ref_name, 'beta') || contains(github.ref_name, 'rc') }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ github.ref_name }}"
+          VERSION="${TAG#v}"
+          
+          echo "Creating release ${TAG} with artifacts:"
+          ls -lhR artifacts/
+          
+          gh release create "${TAG}" \
+            --repo "${{ github.repository }}" \
+            --title "paqetN ${VERSION}" \
+            --generate-notes \
+            artifacts/windows/paqetN.exe#paqetN-${VERSION}-windows-amd64.exe \
+            artifacts/linux/paqetN#paqetN-${VERSION}-linux-amd64

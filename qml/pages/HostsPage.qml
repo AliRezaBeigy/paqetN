@@ -257,7 +257,7 @@ FluPage {
 
         onPositiveClicked: {
             // Navigate to Updates page
-            nav_view.push("qrc:/qml/pages/UpdatesPage.qml")
+            nav_view.push(Qt.resolvedUrl("UpdatesPage.qml"))
             // Trigger auto-download
             paqetController.autoDownloadPaqetIfMissing()
         }

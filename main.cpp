@@ -3,8 +3,13 @@
 #include <QQmlContext>
 #include <QMessageBox>
 #include <QIcon>
+#include <QtQml/qqmlextensionplugin.h>
 #include "src/PaqetController.h"
 #include "src/SingleInstanceGuard.h"
+
+#if defined(QT_STATIC) || !defined(QT_SHARED)
+Q_IMPORT_QML_PLUGIN(FluentUIPlugin)
+#endif
 
 int main(int argc, char *argv[])
 {

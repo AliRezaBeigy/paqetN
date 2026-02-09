@@ -67,19 +67,19 @@ FluWindow {
             FluPaneItem {
                 title: qsTr("Hosts")
                 icon: FluentIcons.GridView
-                url: "qrc:/qml/pages/HostsPage.qml"
+                url: Qt.resolvedUrl("pages/HostsPage.qml")
                 onTap: nav_view.push(url)
             }
             FluPaneItem {
                 title: qsTr("Log")
                 icon: FluentIcons.CommandPrompt
-                url: "qrc:/qml/pages/LogPage.qml"
+                url: Qt.resolvedUrl("pages/LogPage.qml")
                 onTap: nav_view.push(url)
             }
             FluPaneItem {
                 title: qsTr("Updates")
                 icon: FluentIcons.UpdateRestore
-                url: "qrc:/qml/pages/UpdatesPage.qml"
+                url: Qt.resolvedUrl("pages/UpdatesPage.qml")
                 onTap: nav_view.push(url)
             }
         }
@@ -89,7 +89,7 @@ FluWindow {
             FluPaneItem {
                 title: qsTr("Settings")
                 icon: FluentIcons.Settings
-                url: "qrc:/qml/dialogs/SettingsPage.qml"
+                url: Qt.resolvedUrl("dialogs/SettingsPage.qml")
                 onTap: nav_view.push(url)
             }
         }
@@ -97,7 +97,7 @@ FluWindow {
         Component.onCompleted: {
             nav_view.buttonBack.visible = false
             setCurrentIndex(0)
-            push("qrc:/qml/pages/HostsPage.qml")
+            push(Qt.resolvedUrl("pages/HostsPage.qml"))
             window.setHitTestVisible(nav_view.buttonMenu)
         }
     }

@@ -35,7 +35,12 @@ qt_standard_project_setup(REQUIRES 6.8)
 
 # FluentUI
 set(FLUENTUI_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
-set(FLUENTUI_BUILD_STATIC_LIB OFF CACHE BOOL "" FORCE)
+# Build FluentUI as static lib when doing a fully static build
+if(NOT BUILD_SHARED_LIBS)
+    set(FLUENTUI_BUILD_STATIC_LIB ON CACHE BOOL "" FORCE)
+else()
+    set(FLUENTUI_BUILD_STATIC_LIB OFF CACHE BOOL "" FORCE)
+endif()
 add_subdirectory(3rdparty/FluentUI/src)
 
 # QuaZip
@@ -73,10 +78,17 @@ qt_add_executable(apppaqetN
 
 target_include_directories(apppaqetN PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
+# NO_RESOURCE_TARGET_PATH is needed for shared builds (Qt Creator dev)
+# but must be omitted for static builds so QML resources land at :/qt/qml/paqetN/
+set(_qml_module_extra_args "")
+if(BUILD_SHARED_LIBS OR NOT DEFINED BUILD_SHARED_LIBS)
+    list(APPEND _qml_module_extra_args NO_RESOURCE_TARGET_PATH)
+endif()
+
 qt_add_qml_module(apppaqetN
     URI paqetN
     VERSION 1.0
-    NO_RESOURCE_TARGET_PATH
+    ${_qml_module_extra_args}
     QML_FILES
         qml/Main.qml
         qml/pages/HostsPage.qml
@@ -111,6 +123,10 @@ set_target_properties(apppaqetN PROPERTIES
 target_link_libraries(apppaqetN
     PRIVATE Qt6::Quick Qt6::QuickControls2 Qt6::Network Qt6::Widgets Qt6::Svg Qt6::PrintSupport Qt6::Core5Compat fluentuiplugin QuaZip::QuaZip
 )
+# In static builds, also link the auto-generated FluentUI QML plugin init library
+if(NOT BUILD_SHARED_LIBS)
+    target_link_libraries(apppaqetN PRIVATE fluentuipluginplugin)
+endif()
 
 # Define version macro for use in C++ code
 target_compile_definitions(apppaqetN PRIVATE
