@@ -43,6 +43,9 @@ jobs:
             mingw-w64-x86_64-ninja
             mingw-w64-x86_64-wget
             mingw-w64-x86_64-7zip
+            mingw-w64-x86_64-zlib
+            mingw-w64-x86_64-zstd
+            mingw-w64-x86_64-brotli
 
       - name: Cache Qt static build
         id: cache-qt
@@ -197,6 +200,10 @@ jobs:
 
           echo "Qt6 found at ${QT_STATIC_DIR}"
 
+          # Convert MSYS2 paths to Windows paths for CMake
+          ZLIB_STATIC_LIB=$(cygpath -w "/mingw64/lib/libz.a")
+          ZLIB_INCLUDE=$(cygpath -w "/mingw64/include")
+
           cd 3rdparty/quazip
           mkdir -p build
           cd build
@@ -205,7 +212,9 @@ jobs:
             -DBUILD_SHARED_LIBS=OFF \
             -DCMAKE_INSTALL_PREFIX="${QT_STATIC_DIR}" \
             -DCMAKE_PREFIX_PATH="${QT_STATIC_DIR}" \
-            -DQUAZIP_QT_MAJOR_VERSION=6
+            -DQUAZIP_QT_MAJOR_VERSION=6 \
+            -DZLIB_LIBRARY="${ZLIB_STATIC_LIB}" \
+            -DZLIB_INCLUDE_DIR="${ZLIB_INCLUDE}"
           cmake --build . --parallel $JOBS
           cmake --install .
 
@@ -213,13 +222,16 @@ jobs:
         shell: msys2 {0}
         run: |
           QT_STATIC_DIR=$(cygpath -w "$(pwd)/qt-static")
+          # Convert MSYS2 path to Windows path for CMake
+          STATIC_LIBS_DIR=$(cygpath -w "/mingw64/lib")
           cmake -B build -G "Ninja" \
             -DCMAKE_BUILD_TYPE=Release \
             -DAPP_VERSION="${{ steps.version.outputs.version_name }}" \
             -DCMAKE_INSTALL_PREFIX=install \
             -DCMAKE_PREFIX_PATH="${QT_STATIC_DIR}" \
             -DBUILD_SHARED_LIBS=OFF \
-            -DCMAKE_EXE_LINKER_FLAGS="-static"
+            -DCMAKE_EXE_LINKER_FLAGS="-static -static-libgcc -static-libstdc++" \
+            -DSTATIC_LIBS_DIR="${STATIC_LIBS_DIR}"
 
       - name: Build
         shell: msys2 {0}

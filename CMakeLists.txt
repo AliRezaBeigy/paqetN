@@ -135,6 +135,25 @@ target_link_libraries(apppaqetN
 )
 if(WIN32)
     target_link_libraries(apppaqetN PRIVATE wininet rasapi32 iphlpapi ws2_32)
+    # For static builds on MinGW, explicitly link static compression libraries
+    # These are required by Qt's static build
+    if(NOT BUILD_SHARED_LIBS AND MINGW)
+        # Link static compression libraries - passed via STATIC_LIBS_DIR or use defaults
+        set(MINGW_STATIC_LIBS_DIR "${STATIC_LIBS_DIR}" CACHE PATH "Path to MinGW static libraries")
+        if(NOT MINGW_STATIC_LIBS_DIR)
+            # Default MSYS2 MinGW64 path
+            set(MINGW_STATIC_LIBS_DIR "C:/msys64/mingw64/lib")
+        endif()
+        
+        # Link all required static libraries
+        # Order matters: base libraries first, then dependent ones
+        target_link_libraries(apppaqetN PRIVATE
+            "${MINGW_STATIC_LIBS_DIR}/libzstd.a"
+            "${MINGW_STATIC_LIBS_DIR}/libz.a"
+            "${MINGW_STATIC_LIBS_DIR}/libbrotlidec.a"
+            "${MINGW_STATIC_LIBS_DIR}/libbrotlicommon.a"
+        )
+    endif()
 endif()
 # In static builds, also link the auto-generated FluentUI QML plugin init library
 if(NOT BUILD_SHARED_LIBS)
