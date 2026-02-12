@@ -7,7 +7,12 @@ static const QStringList logLevelList = {
     QStringLiteral("warn"), QStringLiteral("error"), QStringLiteral("fatal")
 };
 
+static const QStringList proxyModeList = {
+    QStringLiteral("none"), QStringLiteral("system"), QStringLiteral("tun")
+};
+
 const QStringList &SettingsRepository::logLevels() { return logLevelList; }
+const QStringList &SettingsRepository::proxyModes() { return proxyModeList; }
 
 QSettings *SettingsRepository::settings() const {
     if (!m_settings)
@@ -123,4 +128,25 @@ void SettingsRepository::setAutoUpdatePaqetN(bool enabled) {
     if (autoUpdatePaqetN() == enabled) return;
     settings()->setValue(QStringLiteral("autoUpdatePaqetN"), enabled);
     emit autoUpdatePaqetNChanged();
+}
+
+QString SettingsRepository::proxyMode() const {
+    return settings()->value(QStringLiteral("proxyMode"), QStringLiteral("none")).toString();
+}
+
+void SettingsRepository::setProxyMode(const QString &mode) {
+    QString v = proxyModeList.contains(mode) ? mode : QStringLiteral("none");
+    if (proxyMode() == v) return;
+    settings()->setValue(QStringLiteral("proxyMode"), v);
+    emit proxyModeChanged();
+}
+
+QString SettingsRepository::tunBinaryPath() const {
+    return settings()->value(QStringLiteral("tunBinaryPath")).toString();
+}
+
+void SettingsRepository::setTunBinaryPath(const QString &path) {
+    if (tunBinaryPath() == path) return;
+    settings()->setValue(QStringLiteral("tunBinaryPath"), path);
+    emit tunBinaryPathChanged();
 }

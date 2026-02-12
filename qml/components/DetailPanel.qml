@@ -8,15 +8,11 @@ Rectangle {
 
     property var configData: ({})
     property bool isRunning: false
-    property int latencyMs: -1
-    property bool latencyTesting: false
+    property string proxyMode: "none"
 
     signal editRequested(string configId)
     signal deleteRequested(string configId)
     signal exportRequested(string configId)
-    signal connectRequested()
-    signal disconnectRequested()
-    signal testLatencyRequested()
 
     implicitWidth: 320
     color: FluTheme.dark ? Qt.rgba(30/255, 36/255, 48/255, 1) : window.cardColor
@@ -219,16 +215,33 @@ Rectangle {
 
             Item { Layout.fillHeight: true; Layout.minimumHeight: 16 }
 
-            // Status
-            FluText {
+            // Proxy mode badge
+            Rectangle {
                 Layout.leftMargin: 16
                 Layout.rightMargin: 16
-                text: root.latencyTesting ? qsTr("Testing\u2026")
-                    : (root.isRunning && root.latencyMs >= 0 ? qsTr("Connected \u00B7 %1 ms").arg(root.latencyMs)
-                    : (root.isRunning && root.latencyMs === -1 ? qsTr("Connected")
-                    : qsTr("Not connected")))
-                font: FluTextStyle.Caption
-                color: root.isRunning ? window.successColor : FluTheme.fontSecondaryColor
+                visible: root.isRunning && root.proxyMode !== "none"
+                width: proxyBadgeRow.implicitWidth + 16
+                height: 24
+                radius: 999
+                color: root.proxyMode === "tun" ? window.accentPalette : window.tagColor
+
+                Row {
+                    id: proxyBadgeRow
+                    anchors.centerIn: parent
+                    spacing: 4
+                    FluIcon {
+                        iconSource: root.proxyMode === "tun" ? FluentIcons.Globe : FluentIcons.Settings
+                        iconSize: 14
+                        iconColor: root.proxyMode === "tun" ? "#FFFFFF" : FluTheme.fontSecondaryColor
+                        anchors.verticalCenter: parent.verticalCenter
+                    }
+                    FluText {
+                        text: root.proxyMode === "tun" ? qsTr("TUN") : qsTr("System Proxy")
+                        font: FluTextStyle.Caption
+                        color: root.proxyMode === "tun" ? "#FFFFFF" : FluTheme.fontSecondaryColor
+                        anchors.verticalCenter: parent.verticalCenter
+                    }
+                }
             }
 
             // Action buttons
@@ -265,26 +278,6 @@ Rectangle {
                     implicitHeight: 36
                     onClicked: root.exportRequested(root.cfgId)
                 }
-            }
-
-            // Connect / Disconnect
-            FluFilledButton {
-                Layout.fillWidth: true
-                Layout.leftMargin: 16
-                Layout.rightMargin: 16
-                text: root.isRunning ? qsTr("Disconnect") : qsTr("Connect")
-                textColor: "#FFFFFF"
-                onClicked: root.isRunning ? root.disconnectRequested() : root.connectRequested()
-            }
-
-            // Test latency
-            FluButton {
-                Layout.fillWidth: true
-                Layout.leftMargin: 16
-                Layout.rightMargin: 16
-                visible: root.isRunning
-                text: qsTr("Test Latency")
-                onClicked: root.testLatencyRequested()
             }
 
             Item { Layout.preferredHeight: 16 }

@@ -54,9 +54,131 @@ FluWindow {
         }
     }
 
+    // Bottom bar: active profile (left) + proxy mode (right)
+    Rectangle {
+        id: bottomBar
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        height: 48
+        color: window.surfaceColor
+        border.color: FluTheme.dividerColor
+        border.width: 1
+        z: 5
+
+        // Check if any download is in progress
+        property bool downloadInProgress: paqetController.paqetDownloadInProgress || paqetController.tunAssetsDownloadInProgress
+        property int downloadProgress: {
+            if (paqetController.paqetDownloadInProgress) return paqetController.paqetDownloadProgress
+            if (paqetController.tunAssetsDownloadInProgress) return paqetController.tunAssetsDownloadProgress
+            return 0
+        }
+        property string downloadReason: {
+            if (paqetController.paqetDownloadInProgress) return qsTr("Downloading paqet binary...")
+            if (paqetController.tunAssetsDownloadInProgress) return qsTr("Downloading TUN assets...")
+            return ""
+        }
+
+        // Thin blue progress bar at the top
+        Rectangle {
+            id: progressBar
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.top: parent.top
+            height: 3
+            color: "transparent"
+            visible: bottomBar.downloadInProgress
+
+            Rectangle {
+                anchors.left: parent.left
+                anchors.top: parent.top
+                anchors.bottom: parent.bottom
+                width: parent.width * (bottomBar.downloadProgress / 100.0)
+                color: FluTheme.primaryColor
+                Behavior on width { NumberAnimation { duration: 150 } }
+            }
+        }
+
+        RowLayout {
+            anchors.fill: parent
+            anchors.leftMargin: 16
+            anchors.rightMargin: 16
+            anchors.topMargin: bottomBar.downloadInProgress ? 3 : 0
+            spacing: 12
+
+            // Profile name | status - latency (click latency icon to test)
+            RowLayout {
+                Layout.preferredWidth: 320
+                spacing: 4
+                FluText {
+                    text: (paqetController.selectedConfigName || qsTr("No profile"))
+                        + " | "
+                        + (paqetController.isRunning ? qsTr("connected") : qsTr("Not connected"))
+                        + (paqetController.latencyTesting ? " - " + qsTr("Testing…")
+                            : (paqetController.isRunning ? " - " + (paqetController.latencyMs >= 0 ? qsTr("Connection took %1 ms").arg(paqetController.latencyMs) : qsTr("Connection took %1 ms").arg(-1))
+                                : ""))
+                    font: FluTextStyle.Body
+                    color: FluTheme.fontPrimaryColor
+                    Layout.fillWidth: true
+                    elide: Text.ElideRight
+                }
+                FluIconButton {
+                    iconSource: FluentIcons.SpeedHigh
+                    text: qsTr("Test latency")
+                    display: Button.IconOnly
+                    iconSize: 18
+                    implicitWidth: 36
+                    implicitHeight: 36
+                    enabled: !!paqetController.selectedConfigId && paqetController.isRunning
+                    onClicked: paqetController.testLatency()
+                }
+            }
+
+            // Center: download progress text when active
+            Item { Layout.fillWidth: true }
+            FluText {
+                visible: bottomBar.downloadInProgress
+                text: bottomBar.downloadReason + " " + bottomBar.downloadProgress + "%"
+                font: FluTextStyle.Body
+                color: FluTheme.primaryColor
+            }
+            Item { Layout.fillWidth: true }
+
+            FluComboBox {
+                id: proxyModeCombo
+                Layout.preferredWidth: 160
+                Layout.alignment: Qt.AlignRight
+                property var proxyModeValues: ["none", "system", "tun"]
+                model: [qsTr("Socks only"), qsTr("System proxy"), qsTr("Tun mode")]
+                currentIndex: {
+                    var m = paqetController.proxyMode
+                    var i = proxyModeValues.indexOf(m)
+                    return i >= 0 ? i : 0
+                }
+                onActivated: function(index) {
+                    if (index >= 0 && index < proxyModeValues.length)
+                        paqetController.setProxyMode(proxyModeValues[index])
+                }
+            }
+            FluIconButton {
+                iconSource: FluentIcons.Sync
+                text: qsTr("Restart")
+                display: Button.IconOnly
+                iconSize: 18
+                implicitWidth: 36
+                implicitHeight: 36
+                enabled: !!paqetController.selectedConfigId
+                onClicked: paqetController.restart()
+            }
+        }
+    }
+
     FluNavigationView {
         id: nav_view
-        anchors.fill: parent
+        anchors.top: parent.top
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.bottom: bottomBar.top
         pageMode: FluNavigationViewType.NoStack
         displayMode: FluNavigationViewType.Compact
         navCompactWidth: 56
@@ -200,11 +322,10 @@ FluWindow {
         }
     }
 
-    FluContentDialog {
+    CustomContentDialog {
         id: downloadPaqetPromptDialog
         title: qsTr("Paqet binary not found")
         message: qsTr("The paqet binary was not found on your system. Would you like to download it now?")
-        buttonFlags: FluContentDialogType.NegativeButton | FluContentDialogType.PositiveButton
         negativeText: qsTr("Later")
         positiveText: qsTr("Download")
         onPositiveClicked: {
@@ -212,10 +333,41 @@ FluWindow {
         }
     }
 
+    CustomContentDialog {
+        id: downloadTunAssetsPromptDialog
+        title: qsTr("TUN mode assets not found")
+        message: qsTr("TUN mode requires hev-socks5-tunnel and (on Windows) wintun.dll. They were not found.\n\nWould you like to download them now?")
+        negativeText: qsTr("Later")
+        positiveText: qsTr("Download")
+        onPositiveClicked: {
+            paqetController.autoDownloadTunAssetsIfMissing()
+        }
+    }
+
+    CustomContentDialog {
+        id: adminPrivilegeDialog
+        title: qsTr("Administrator Privileges Required")
+        message: qsTr("TUN mode requires administrator privileges to create a virtual network adapter.\n\nWould you like to restart the application with administrator privileges?")
+        negativeText: qsTr("Cancel")
+        positiveText: qsTr("Restart as Admin")
+        onPositiveClicked: {
+            paqetController.restartAsAdmin()
+        }
+    }
+
     Connections {
         target: paqetController
         function onPaqetBinaryMissingPrompt() {
             downloadPaqetPromptDialog.open()
+        }
+        function onPaqetBinaryMissing() {
+            downloadPaqetPromptDialog.open()
+        }
+        function onTunAssetsMissingPrompt() {
+            downloadTunAssetsPromptDialog.open()
+        }
+        function onAdminPrivilegeRequired() {
+            adminPrivilegeDialog.open()
         }
     }
 

@@ -35,6 +35,23 @@ QList<NetworkAdapterInfo> NetworkInfoDetector::detectAdapters()
 #endif
 }
 
+// Helper to skip virtual/Hyper-V/VMware adapters (prefer physical interface)
+static bool isVirtualAdapter(const QString &adapterName)
+{
+    QString name = adapterName.trimmed();
+    if (name.isEmpty()) return true;
+    // vEthernet = Hyper-V virtual switch; (nat), (WSL), etc. in name
+    if (name.contains(QStringLiteral("vEthernet"), Qt::CaseInsensitive)) return true;
+    if (name.contains(QStringLiteral("Hyper-V"), Qt::CaseInsensitive)) return true;
+    if (name.contains(QStringLiteral("Virtual Ethernet"), Qt::CaseInsensitive)) return true;
+    if (name.contains(QStringLiteral("VMware"), Qt::CaseInsensitive)) return true;
+    if (name.contains(QStringLiteral("VirtualBox"), Qt::CaseInsensitive)) return true;
+    if (name.contains(QStringLiteral("WSL"), Qt::CaseInsensitive)) return true;
+    if (name.contains(QStringLiteral("Docker"), Qt::CaseInsensitive)) return true;
+    if (name.contains(QStringLiteral("vethernet"), Qt::CaseInsensitive)) return true;
+    return false;
+}
+
 // Helper function to check if IP is a real network IP (not APIPA/link-local)
 static bool isRealNetworkIP(const QString &ipAddress)
 {
@@ -74,6 +91,12 @@ NetworkAdapterInfo NetworkInfoDetector::getDefaultAdapter()
             adapter.interfaceName == QStringLiteral("lo") ||
             adapter.name.contains(QStringLiteral("Loopback"), Qt::CaseInsensitive)) {
             log(QStringLiteral("Skipping loopback adapter: '%1'").arg(adapter.name));
+            continue;
+        }
+
+        // Skip virtual adapters (Hyper-V vEthernet, VMware, etc.) so we prefer physical
+        if (isVirtualAdapter(adapter.name)) {
+            log(QStringLiteral("Skipping virtual adapter: '%1'").arg(adapter.name));
             continue;
         }
         
@@ -212,6 +235,8 @@ QList<NetworkAdapterInfo> NetworkInfoDetector::detectAdaptersWindows()
             if (currentAdapter.name.contains(QStringLiteral("Loopback"), Qt::CaseInsensitive) ||
                 currentAdapter.name.contains(QStringLiteral("Loopback Pseudo"), Qt::CaseInsensitive)) {
                 log(QStringLiteral("Skipping loopback adapter from PowerShell: '%1'").arg(currentAdapter.name));
+            } else if (isVirtualAdapter(currentAdapter.name)) {
+                log(QStringLiteral("Skipping virtual adapter from PowerShell: '%1'").arg(currentAdapter.name));
             } else {
                 log(QStringLiteral("Found adapter from PowerShell: name='%1', guid='%2', active=%3")
                     .arg(currentAdapter.name, currentAdapter.guid, currentAdapter.isActive ? QStringLiteral("true") : QStringLiteral("false")));
@@ -248,6 +273,23 @@ QList<NetworkAdapterInfo> NetworkInfoDetector::detectAdaptersWindows()
         if (line.contains(QLatin1String("adapter"), Qt::CaseInsensitive) && line.contains(QLatin1Char(':'))) {
             // Save previous adapter info
             if (!currentAdapterName.isEmpty() && !ipAddress.isEmpty()) {
+                // Skip virtual adapter ipconfig blocks - they should not update physical adapters
+                if (isVirtualAdapter(currentAdapterName)) {
+                    log(QStringLiteral("Skipping ipconfig block for virtual adapter: '%1'").arg(currentAdapterName));
+                    // Reset and continue to next adapter section
+                    currentAdapterName.clear();
+                    ipAddress.clear();
+                    gateway.clear();
+                    description.clear();
+                    // Extract new adapter name
+                    QRegularExpression adapterNameRe(QStringLiteral("adapter\\s+(.+?)\\s*:"));
+                    auto match = adapterNameRe.match(line);
+                    if (match.hasMatch()) {
+                        currentAdapterName = match.captured(1).trimmed();
+                        log(QStringLiteral("Found ipconfig adapter section: '%1'").arg(currentAdapterName));
+                    }
+                    continue;
+                }
                 // Try to match by description or adapter name
                 for (auto &adapter : result) {
                     bool matches = false;
@@ -344,6 +386,10 @@ QList<NetworkAdapterInfo> NetworkInfoDetector::detectAdaptersWindows()
 
     // Save last adapter info
     if (!currentAdapterName.isEmpty() && !ipAddress.isEmpty()) {
+        // Skip virtual adapter ipconfig blocks
+        if (isVirtualAdapter(currentAdapterName)) {
+            log(QStringLiteral("Skipping last ipconfig block for virtual adapter: '%1'").arg(currentAdapterName));
+        } else {
         log(QStringLiteral("Processing last adapter: '%1', IP=%2, Gateway=%3, Description='%4'")
             .arg(currentAdapterName, ipAddress, gateway, description));
         bool matched = false;
@@ -387,6 +433,7 @@ QList<NetworkAdapterInfo> NetworkInfoDetector::detectAdaptersWindows()
             !currentAdapterName.contains(QStringLiteral("Loopback"), Qt::CaseInsensitive)) {
             log(QStringLiteral("  WARNING: Could not match adapter '%1' with any PowerShell adapter").arg(currentAdapterName));
         }
+        } // end else (non-virtual adapter)
     }
 
     // Step 3: Use QNetworkInterface as fallback for adapters without IP from ipconfig

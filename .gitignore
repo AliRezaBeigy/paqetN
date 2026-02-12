@@ -180,6 +180,7 @@ core
 *.Release
 *.res
 *.rc
+!assets/app.rc
 *.manifest
 
 # macOS

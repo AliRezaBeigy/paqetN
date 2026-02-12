@@ -1,30 +1,27 @@
 #pragma once
 
-#include "PaqetConfig.h"
-#include "LogBuffer.h"
 #include <QObject>
 #include <QProcess>
 
-class PaqetRunner : public QObject
+class LogBuffer;
+
+class TunManager : public QObject
 {
     Q_OBJECT
     Q_PROPERTY(bool running READ isRunning NOTIFY runningChanged)
 public:
-    explicit PaqetRunner(LogBuffer *logBuffer, QObject *parent = nullptr);
+    explicit TunManager(LogBuffer *logBuffer, QObject *parent = nullptr);
 
     bool isRunning() const { return m_process && m_process->state() != QProcess::NotRunning; }
-    void start(const PaqetConfig &config, const QString &logLevel);
-
+    bool start(int socksPort, const QString &serverAddr);
     void stop();
     void stopBlocking();
 
-    QString resolvePaqetBinary() const;
-    void setPaqetBinaryPath(const QString &path) { m_customPaqetPath = path; }
+    QString resolveTunBinary() const;
+    void setTunBinaryPath(const QString &path) { m_customBinaryPath = path; }
 
 signals:
     void runningChanged();
-    void started();
-    void startFailed(const QString &error);
     void stopped();
 
 private:
@@ -34,8 +31,22 @@ private:
     void onProcessError(QProcess::ProcessError error);
     void onProcessFinished(int exitCode, QProcess::ExitStatus exitStatus);
 
+    QString generateConfig(int socksPort);
+    bool setupServerRoute(const QString &serverAddr);
+    bool setupTunRoutes();
+    void cleanupRoutes();
+
+#ifdef Q_OS_WIN
+    int getTunInterfaceIndex() const;
+    bool waitForTunInterface(int timeoutMs);
+#endif
+
     LogBuffer *m_logBuffer = nullptr;
     QProcess *m_process = nullptr;
-    QString m_customPaqetPath;
+    QString m_customBinaryPath;
     QString m_configPath;
+    QString m_serverAddr;
+    QString m_originalGateway;
+    QString m_originalInterface;
+    int m_tunInterfaceIndex = -1;
 };

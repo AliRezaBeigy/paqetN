@@ -6,11 +6,16 @@
 #include <QObject>
 #include <QVariantList>
 #include <QVariantMap>
+#include <functional>
 
 class LogBuffer;
 class PaqetRunner;
 class LatencyChecker;
 class UpdateManager;
+class TunManager;
+class SystemProxyManager;
+class TunAssetsManager;
+class HttpToSocksProxy;
 
 class PaqetController : public QObject
 {
@@ -30,6 +35,11 @@ class PaqetController : public QObject
     Q_PROPERTY(bool paqetnDownloadInProgress READ paqetnDownloadInProgress NOTIFY paqetnDownloadInProgressChanged)
     Q_PROPERTY(int paqetnDownloadProgress READ paqetnDownloadProgress NOTIFY paqetnDownloadProgressChanged)
     Q_PROPERTY(QString installedPaqetVersion READ installedPaqetVersion NOTIFY installedPaqetVersionChanged)
+    Q_PROPERTY(QString proxyMode READ proxyMode NOTIFY proxyModeChanged)
+    Q_PROPERTY(bool tunRunning READ tunRunning NOTIFY tunRunningChanged)
+    Q_PROPERTY(bool systemProxyEnabled READ systemProxyEnabled NOTIFY systemProxyEnabledChanged)
+    Q_PROPERTY(bool tunAssetsDownloadInProgress READ tunAssetsDownloadInProgress NOTIFY tunAssetsDownloadInProgressChanged)
+    Q_PROPERTY(int tunAssetsDownloadProgress READ tunAssetsDownloadProgress NOTIFY tunAssetsDownloadProgressChanged)
 public:
     explicit PaqetController(QObject *parent = nullptr);
     ~PaqetController() override;
@@ -50,6 +60,11 @@ public:
     bool paqetnDownloadInProgress() const { return m_paqetnDownloadInProgress; }
     int paqetnDownloadProgress() const { return m_paqetnDownloadProgress; }
     QString installedPaqetVersion() const;
+    QString proxyMode() const;
+    bool tunRunning() const;
+    bool systemProxyEnabled() const;
+    bool tunAssetsDownloadInProgress() const { return m_tunAssetsDownloadInProgress; }
+    int tunAssetsDownloadProgress() const { return m_tunAssetsDownloadProgress; }
 
     Q_INVOKABLE QVariantMap getConfigForEdit(const QString &id);
     Q_INVOKABLE QVariantList getGroups();
@@ -61,6 +76,7 @@ public:
     Q_INVOKABLE QString exportYaml(const QString &id);
     Q_INVOKABLE void connectToSelected();
     Q_INVOKABLE void disconnect();
+    Q_INVOKABLE void restart();
     Q_INVOKABLE void testLatency();
     Q_INVOKABLE void clearLog();
     Q_INVOKABLE void copyToClipboard(const QString &text);
@@ -100,6 +116,19 @@ public:
     Q_INVOKABLE bool getAutoUpdatePaqetN() const;
     Q_INVOKABLE void setAutoUpdatePaqetN(bool enabled);
 
+    // Proxy mode
+    Q_INVOKABLE QString getProxyMode() const;
+    Q_INVOKABLE void setProxyMode(const QString &mode);
+    Q_INVOKABLE QStringList getProxyModes() const;
+    Q_INVOKABLE QString getTunBinaryPath() const;
+    Q_INVOKABLE void setTunBinaryPath(const QString &path);
+    Q_INVOKABLE bool isTunAssetsAvailable() const;
+    Q_INVOKABLE void autoDownloadTunAssetsIfMissing();
+
+    // Admin privileges (for TUN mode on Windows)
+    Q_INVOKABLE bool isRunningAsAdmin() const;
+    Q_INVOKABLE void restartAsAdmin();
+
     // Network detection
     Q_INVOKABLE QVariantList detectNetworkAdapters();
     Q_INVOKABLE QVariantMap getDefaultNetworkAdapter();
@@ -124,6 +153,13 @@ signals:
     void paqetnDownloadComplete();
     void paqetBinaryMissing();
     void paqetBinaryMissingPrompt();
+    void tunAssetsMissingPrompt();
+    void adminPrivilegeRequired();
+    void proxyModeChanged();
+    void tunRunningChanged();
+    void systemProxyEnabledChanged();
+    void tunAssetsDownloadInProgressChanged();
+    void tunAssetsDownloadProgressChanged();
 
 private slots:
     void onPaqetUpdateCheckFinished(bool available, const QString &version, const QString &url);
@@ -132,10 +168,12 @@ private slots:
     void onPaqetNDownloadProgress(qint64 bytesReceived, qint64 bytesTotal);
     void onPaqetDownloadFinished(const QString &path);
     void onPaqetNDownloadFinished();
+    void cleanup();
 
 private:
     void reloadConfigList();
     PaqetConfig selectedConfig() const;
+    void disconnectAsync(const std::function<void()> &callback);
 
     ConfigRepository *m_repo = nullptr;
     SettingsRepository *m_settings = nullptr;
@@ -144,6 +182,10 @@ private:
     PaqetRunner *m_runner = nullptr;
     LatencyChecker *m_latencyChecker = nullptr;
     UpdateManager *m_updateManager = nullptr;
+    TunManager *m_tunManager = nullptr;
+    SystemProxyManager *m_systemProxyManager = nullptr;
+    TunAssetsManager *m_tunAssetsManager = nullptr;
+    HttpToSocksProxy *m_httpProxy = nullptr;
     QString m_selectedConfigId;
     QString m_connectedConfigId;
     int m_latencyMs = -1;
@@ -155,4 +197,6 @@ private:
     bool m_paqetnDownloadInProgress = false;
     int m_paqetnDownloadProgress = 0;
     bool m_autoDownloadMode = false; // Track if current check is for auto-download
+    bool m_tunAssetsDownloadInProgress = false;
+    int m_tunAssetsDownloadProgress = 0;
 };

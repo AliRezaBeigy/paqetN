@@ -29,7 +29,7 @@ endif()
 
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-find_package(Qt6 REQUIRED COMPONENTS Quick QuickControls2 Network Widgets Svg PrintSupport Core5Compat)
+find_package(Qt6 REQUIRED COMPONENTS Quick QuickControls2 Network Widgets Svg PrintSupport Core5Compat Concurrent)
 
 qt_standard_project_setup(REQUIRES 6.8)
 
@@ -68,6 +68,10 @@ set(PAQET_SOURCES
     src/SingleInstanceGuard.cpp
     src/UpdateManager.cpp
     src/NetworkInfoDetector.cpp
+    src/TunManager.cpp
+    src/TunAssetsManager.cpp
+    src/SystemProxyManager.cpp
+    src/HttpToSocksProxy.cpp
     src/PaqetController.cpp
 )
 
@@ -127,8 +131,11 @@ set_target_properties(apppaqetN PROPERTIES
 )
 
 target_link_libraries(apppaqetN
-    PRIVATE Qt6::Quick Qt6::QuickControls2 Qt6::Network Qt6::Widgets Qt6::Svg Qt6::PrintSupport Qt6::Core5Compat fluentuiplugin QuaZip::QuaZip
+    PRIVATE Qt6::Quick Qt6::QuickControls2 Qt6::Network Qt6::Widgets Qt6::Svg Qt6::PrintSupport Qt6::Core5Compat Qt6::Concurrent fluentuiplugin QuaZip::QuaZip
 )
+if(WIN32)
+    target_link_libraries(apppaqetN PRIVATE wininet rasapi32 iphlpapi ws2_32)
+endif()
 # In static builds, also link the auto-generated FluentUI QML plugin init library
 if(NOT BUILD_SHARED_LIBS)
     target_link_libraries(apppaqetN PRIVATE fluentuipluginplugin)
@@ -163,5 +170,22 @@ else()
     install(TARGETS QuaZip
         LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
         ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    )
+endif()
+
+# Tests
+option(BUILD_TESTS "Build test executables" OFF)
+if(BUILD_TESTS)
+    # HTTP to SOCKS proxy test
+    qt_add_executable(test_http2socks
+        tests/test_http2socks.cpp
+        src/HttpToSocksProxy.cpp
+        src/LogBuffer.cpp
+    )
+    target_include_directories(test_http2socks PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_link_libraries(test_http2socks PRIVATE Qt6::Core Qt6::Network)
+    set_target_properties(test_http2socks PROPERTIES
+        AUTOMOC ON
+        WIN32_EXECUTABLE FALSE
     )
 endif()

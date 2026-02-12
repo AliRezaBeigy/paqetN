@@ -182,8 +182,7 @@ FluPage {
             visible: !!paqetController.selectedConfigId
             configData: paqetController.selectedConfigData
             isRunning: paqetController.isRunning
-            latencyMs: paqetController.latencyMs
-            latencyTesting: paqetController.latencyTesting
+            proxyMode: paqetController.proxyMode
             onEditRequested: function(id) { window.openConfigEditor(id) }
             onDeleteRequested: function(id) {
                 deleteConfirmDialog.configId = id
@@ -191,9 +190,6 @@ FluPage {
                 deleteConfirmDialog.open()
             }
             onExportRequested: function(id) { exportMenu.popup() }
-            onConnectRequested: paqetController.connectToSelected()
-            onDisconnectRequested: paqetController.disconnect()
-            onTestLatencyRequested: paqetController.testLatency()
         }
     }
 
@@ -247,28 +243,4 @@ FluPage {
         }
     }
 
-    // ── Paqet Binary Missing Dialog ──
-    CustomContentDialog {
-        id: paqetMissingDialog
-        title: qsTr("Paqet Binary Not Found")
-        message: qsTr("The paqet binary is required to establish connections but was not found on your system.\n\nWould you like to download it now?")
-        negativeText: qsTr("Cancel")
-        positiveText: qsTr("Download")
-
-        onPositiveClicked: {
-            // Navigate to Updates page
-            nav_view.push(Qt.resolvedUrl("UpdatesPage.qml"))
-            // Trigger auto-download
-            paqetController.autoDownloadPaqetIfMissing()
-        }
-    }
-
-    // ── Connections ──
-    Connections {
-        target: paqetController
-
-        function onPaqetBinaryMissing() {
-            paqetMissingDialog.open()
-        }
-    }
 }

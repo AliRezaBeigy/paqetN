@@ -41,7 +41,14 @@ public:
     bool autoUpdatePaqetN() const;
     void setAutoUpdatePaqetN(bool enabled);
 
+    QString proxyMode() const;           // "none" | "system" | "tun"
+    void setProxyMode(const QString &mode);
+
+    QString tunBinaryPath() const;
+    void setTunBinaryPath(const QString &path);
+
     static const QStringList &logLevels();
+    static const QStringList &proxyModes();
     static constexpr int defaultSocksPort = 1284;
     static constexpr const char *defaultConnectionCheckUrl = "https://www.gstatic.com/generate_204";
     static constexpr int defaultConnectionCheckTimeoutSeconds = 10;
@@ -59,6 +66,8 @@ signals:
     void autoDownloadPaqetChanged();
     void autoCheckUpdatesChanged();
     void autoUpdatePaqetNChanged();
+    void proxyModeChanged();
+    void tunBinaryPathChanged();
 
 private:
     QSettings *settings() const;

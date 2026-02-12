@@ -45,6 +45,11 @@ FluPage {
                     text: qsTr("Word wrap")
                     checked: true
                 }
+                FluCheckBox {
+                    id: autoScrollCheck
+                    text: qsTr("Auto scroll")
+                    checked: true
+                }
                 Item { Layout.fillWidth: true }
             }
         }
@@ -73,11 +78,13 @@ FluPage {
                     policy: ScrollBar.AsNeeded
                 }
 
-                Text {
+                TextEdit {
                     id: logText
                     width: logFlickable.width
                     text: paqetController.logText
-                    wrapMode: logWordWrap.checked ? Text.Wrap : Text.NoWrap
+                    wrapMode: logWordWrap.checked ? TextEdit.Wrap : TextEdit.NoWrap
+                    readOnly: true
+                    selectByMouse: true
                     font.family: "Consolas"
                     font.pixelSize: 14
                     color: FluTheme.fontPrimaryColor
@@ -86,10 +93,12 @@ FluPage {
                     onTextChanged: {
                         Qt.callLater(function() {
                             logFlickable.contentHeight = logText.implicitHeight
-                            // Auto-scroll to bottom if user is near bottom
-                            var scrollPos = logFlickable.contentY / Math.max(1, logFlickable.contentHeight - logFlickable.height)
-                            if (scrollPos > 0.95 || scrollPos === 0 || logFlickable.contentHeight <= logFlickable.height) {
-                                logFlickable.contentY = Math.max(0, logText.implicitHeight - logFlickable.height)
+                            // Auto-scroll to bottom when enabled and user is near bottom
+                            if (autoScrollCheck.checked) {
+                                var scrollPos = logFlickable.contentY / Math.max(1, logFlickable.contentHeight - logFlickable.height)
+                                if (scrollPos > 0.95 || scrollPos === 0 || logFlickable.contentHeight <= logFlickable.height) {
+                                    logFlickable.contentY = Math.max(0, logText.implicitHeight - logFlickable.height)
+                                }
                             }
                         })
                     }

@@ -4,6 +4,7 @@
 #include <QStandardPaths>
 #include <QTemporaryFile>
 #include <QFileInfo>
+#include <QTimer>
 
 PaqetRunner::PaqetRunner(LogBuffer *logBuffer, QObject *parent)
     : QObject(parent), m_logBuffer(logBuffer) {
@@ -21,24 +22,23 @@ QString PaqetRunner::resolvePaqetBinary() const {
         QFileInfo fi(m_customPaqetPath);
         if (fi.isExecutable()) return fi.absoluteFilePath();
     }
-    const QString baseDir = QCoreApplication::applicationDirPath();
+    const QString coresDir = QCoreApplication::applicationDirPath() + QLatin1String("/cores");
 #ifdef Q_OS_WIN
-    const QString exe = baseDir + QLatin1String("/paqet.exe");
+    const QString exe = coresDir + QLatin1String("/paqet.exe");
 #else
-    const QString exe = baseDir + QLatin1String("/paqet");
+    const QString exe = coresDir + QLatin1String("/paqet");
 #endif
     if (QFileInfo::exists(exe)) return exe;
     return QStringLiteral("paqet");
 }
 
-bool PaqetRunner::start(const PaqetConfig &config, const QString &logLevel) {
+void PaqetRunner::start(const PaqetConfig &config, const QString &logLevel) {
     if (m_logBuffer) m_logBuffer->append(QStringLiteral("[paqet] Stopping any existing process..."));
     stop();
 
     if (m_logBuffer) m_logBuffer->append(QStringLiteral("[paqet] Generating config YAML..."));
     const QString yaml = config.withDefaults().toYaml(logLevel);
 
-    // Log the generated YAML for debugging
     if (m_logBuffer) {
         m_logBuffer->append(QStringLiteral("[paqet] Generated YAML config:"));
         for (const QString &line : yaml.split(QLatin1Char('\n'))) {
@@ -52,8 +52,10 @@ bool PaqetRunner::start(const PaqetConfig &config, const QString &logLevel) {
     QDir().mkpath(dir);
     QFile f(dir + QLatin1String("/config_run.yaml"));
     if (!f.open(QIODevice::WriteOnly | QIODevice::Text)) {
-        if (m_logBuffer) m_logBuffer->append(QStringLiteral("[paqet] ERROR: Failed to create config file: ") + f.fileName());
-        return false;
+        QString err = QStringLiteral("Failed to create config file: ") + f.fileName();
+        if (m_logBuffer) m_logBuffer->append(QStringLiteral("[paqet] ERROR: ") + err);
+        emit startFailed(err);
+        return;
     }
     f.write(yaml.toUtf8());
     f.close();
@@ -65,12 +67,16 @@ bool PaqetRunner::start(const PaqetConfig &config, const QString &logLevel) {
 
     QFileInfo binaryInfo(binary);
     if (!binaryInfo.exists()) {
-        if (m_logBuffer) m_logBuffer->append(QStringLiteral("[paqet] ERROR: Binary does not exist: ") + binary);
-        return false;
+        QString err = QStringLiteral("Binary does not exist: ") + binary;
+        if (m_logBuffer) m_logBuffer->append(QStringLiteral("[paqet] ERROR: ") + err);
+        emit startFailed(err);
+        return;
     }
     if (!binaryInfo.isExecutable()) {
-        if (m_logBuffer) m_logBuffer->append(QStringLiteral("[paqet] ERROR: Binary is not executable: ") + binary);
-        return false;
+        QString err = QStringLiteral("Binary is not executable: ") + binary;
+        if (m_logBuffer) m_logBuffer->append(QStringLiteral("[paqet] ERROR: ") + err);
+        emit startFailed(err);
+        return;
     }
 
     m_process->setWorkingDirectory(dir);
@@ -79,29 +85,21 @@ bool PaqetRunner::start(const PaqetConfig &config, const QString &logLevel) {
 
     if (m_logBuffer) m_logBuffer->append(QStringLiteral("[paqet] Starting process: ") + binary + QLatin1String(" run -c ") + m_configPath);
     m_process->start(QProcess::ReadOnly);
-
-    if (m_logBuffer) m_logBuffer->append(QStringLiteral("[paqet] Waiting for process to start (3 seconds timeout)..."));
-    const bool ok = m_process->waitForStarted(3000);
-
-    if (ok) {
-        if (m_logBuffer) {
-            m_logBuffer->append(QStringLiteral("[paqet] Process started successfully (PID: %1)").arg(m_process->processId()));
-            m_logBuffer->append(QStringLiteral("[paqet] Process state: %1").arg(m_process->state()));
-        }
-    } else {
-        if (m_logBuffer) {
-            m_logBuffer->append(QStringLiteral("[paqet] ERROR: Failed to start process"));
-            m_logBuffer->append(QStringLiteral("[paqet] Process error: %1").arg(m_process->errorString()));
-            m_logBuffer->append(QStringLiteral("[paqet] Process state: %1").arg(m_process->state()));
-            m_logBuffer->append(QStringLiteral("[paqet] Exit code: %1").arg(m_process->exitCode()));
-            m_logBuffer->append(QStringLiteral("[paqet] Exit status: %1").arg(m_process->exitStatus()));
-        }
-    }
-
-    return ok;
+    // started() or startFailed() will be emitted when process state is known
 }
 
 void PaqetRunner::stop() {
+    if (!m_process || m_process->state() == QProcess::NotRunning) return;
+    m_process->terminate();
+    QTimer::singleShot(2000, this, [this]() {
+        if (m_process && m_process->state() != QProcess::NotRunning) {
+            m_process->kill();
+        }
+    });
+    if (m_logBuffer) m_logBuffer->append(QStringLiteral("[paqet] Stopping..."));
+}
+
+void PaqetRunner::stopBlocking() {
     if (!m_process || m_process->state() == QProcess::NotRunning) return;
     m_process->terminate();
     if (!m_process->waitForFinished(2000))
@@ -119,6 +117,15 @@ void PaqetRunner::onProcessStateChanged(QProcess::ProcessState state) {
         }
         m_logBuffer->append(QStringLiteral("[paqet] Process state changed to: ") + stateStr);
     }
+    if (state == QProcess::Running) {
+        if (m_logBuffer)
+            m_logBuffer->append(QStringLiteral("[paqet] Process started successfully (PID: %1)").arg(m_process->processId()));
+        emit started();
+    }
+    if (state == QProcess::NotRunning) {
+        if (m_logBuffer) m_logBuffer->append(QStringLiteral("[paqet] stopped"));
+        emit stopped();
+    }
     emit runningChanged();
 }
 
@@ -135,6 +142,15 @@ void PaqetRunner::onReadyReadStandardError() {
 }
 
 void PaqetRunner::onProcessError(QProcess::ProcessError error) {
+    if (error == QProcess::FailedToStart) {
+        QString err = m_process->errorString();
+        if (m_logBuffer) {
+            m_logBuffer->append(QStringLiteral("[paqet] ERROR: Failed to start process"));
+            m_logBuffer->append(QStringLiteral("[paqet] Process error: ") + err);
+        }
+        emit startFailed(err);
+        return;
+    }
     if (!m_logBuffer) return;
     QString errorStr;
     switch (error) {

@@ -52,10 +52,10 @@ bool UpdateManager::isPaqetBinaryAvailable(const QString &customPath) const
         return info.exists() && info.isFile() && info.isExecutable();
     }
 
-    // Check in application directory
-    QString appDirPath = QCoreApplication::applicationDirPath() + QDir::separator() + exeName;
-    QFileInfo appDirInfo(appDirPath);
-    if (appDirInfo.exists() && appDirInfo.isFile()) {
+    // Check in cores subdirectory
+    QString coresDirPath = QCoreApplication::applicationDirPath() + QDir::separator() + QStringLiteral("cores") + QDir::separator() + exeName;
+    QFileInfo coresDirInfo(coresDirPath);
+    if (coresDirInfo.exists() && coresDirInfo.isFile()) {
         return true;
     }
 
@@ -80,7 +80,7 @@ QString UpdateManager::getInstalledPaqetVersion() const
         QStringLiteral("paqet");
 #endif
 
-    QString exePath = QCoreApplication::applicationDirPath() + QDir::separator() + exeName;
+    QString exePath = QCoreApplication::applicationDirPath() + QDir::separator() + QStringLiteral("cores") + QDir::separator() + exeName;
 
     QProcess process;
     // Use "version" subcommand, not "--version" flag
@@ -590,8 +590,8 @@ bool UpdateManager::extractZip(const QString &zipPath, const QString &destDir)
 
 QString UpdateManager::getPaqetInstallDir() const
 {
-    // Install in application directory (same dir as PaqetN.exe)
-    return QCoreApplication::applicationDirPath();
+    // Install in cores subdirectory of application directory
+    return QCoreApplication::applicationDirPath() + QDir::separator() + QStringLiteral("cores");
 }
 
 void UpdateManager::performSelfUpdate(const QString &newExePath)

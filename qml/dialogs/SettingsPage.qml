@@ -17,6 +17,7 @@ FluPage {
         var logIdx = levels.indexOf(paqetController.getLogLevel())
         logLevelCombo.currentIndex = logIdx >= 0 ? logIdx : levels.indexOf("fatal")
         paqetPathField.text = paqetController.getPaqetBinaryPath()
+        tunPathField.text = paqetController.getTunBinaryPath()
     }
 
     Flickable {
@@ -138,6 +139,42 @@ FluPage {
                             text: "10"
                             validator: IntValidator { bottom: 3; top: 60 }
                             onEditingFinished: paqetController.setConnectionCheckTimeoutSeconds(parseInt(text) || 10)
+                        }
+                    }
+                }
+            }
+
+            Item { Layout.preferredHeight: 16 }
+
+            // ── TUN (optional) ──
+            ColumnLayout {
+                Layout.fillWidth: true
+                Layout.leftMargin: 20
+                Layout.rightMargin: 20
+                spacing: 8
+
+                FluText {
+                    text: qsTr("TUN Mode")
+                    font: FluTextStyle.BodyStrong
+                    color: FluTheme.fontSecondaryColor
+                }
+
+                FluFrame {
+                    Layout.fillWidth: true
+                    padding: 16
+
+                    GridLayout {
+                        columns: 2
+                        rowSpacing: 12
+                        columnSpacing: 12
+                        width: parent.width - 32
+
+                        FluText { text: qsTr("hev-socks5-tunnel path"); font: FluTextStyle.Body }
+                        FluTextBox {
+                            id: tunPathField
+                            Layout.fillWidth: true
+                            placeholderText: qsTr("Leave empty for auto (app dir)")
+                            onEditingFinished: paqetController.setTunBinaryPath(text.trim())
                         }
                     }
                 }
