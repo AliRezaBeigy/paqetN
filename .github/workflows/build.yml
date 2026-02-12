@@ -111,6 +111,7 @@ jobs:
             -skip qtremoteobjects -skip qtscxml -skip qtscript \
             -skip qtquick3d -skip qtquick3dphysics \
             -skip qtdatavis3d -skip qtopcua -skip qtquickeffectmaker \
+            -skip qtwayland -skip qtvirtualkeyboard -skip qthttpserver -skip qtlottie \
             -nomake examples -nomake tests \
             -qt-zlib -qt-libpng -qt-libjpeg -qt-pcre -qt-harfbuzz -qt-freetype \
             -no-feature-system-libb2 \
@@ -266,6 +267,16 @@ jobs:
             echo "No tag detected, using default version: 0.1.0"
           fi
 
+      - name: Free disk space
+        run: |
+          echo "Before cleanup:"
+          df -h /
+          # Remove large pre-installed software to free ~20GB
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache
+          sudo apt-get clean
+          echo "After cleanup:"
+          df -h /
+
       - name: Install system dependencies
         run: |
           sudo apt-get update
@@ -319,13 +330,17 @@ jobs:
         run: |
           QT_VERSION=6.10.2
           QT_SRC_DIR=qt-everywhere-src-${QT_VERSION}
-          QT_INSTALL_PREFIX=$(pwd)/qt-static
-          
+          WORKSPACE_ROOT=$(pwd)
+          QT_INSTALL_PREFIX=${WORKSPACE_ROOT}/qt-static
+
           wget -q https://download.qt.io/official_releases/qt/6.10/${QT_VERSION}/single/${QT_SRC_DIR}.tar.xz
           tar -xf ${QT_SRC_DIR}.tar.xz
+          # Delete tarball immediately to free ~1GB
+          rm -f ${QT_SRC_DIR}.tar.xz
           cd ${QT_SRC_DIR}
-          
+
           # Configure Qt for static build
+          # Skip all modules not needed by the project to save disk space and build time
           ./configure -static -release -opensource -confirm-license \
             -prefix "${QT_INSTALL_PREFIX}" \
             -cmake-generator "Ninja" \
@@ -339,30 +354,34 @@ jobs:
             -skip qtremoteobjects -skip qtscxml -skip qtscript \
             -skip qtquick3d -skip qtquick3dphysics \
             -skip qtdatavis3d -skip qtopcua -skip qtquickeffectmaker \
+            -skip qtwayland -skip qtvirtualkeyboard -skip qthttpserver -skip qtlottie \
             -nomake examples -nomake tests \
             -qt-zlib -qt-libpng -qt-libjpeg -qt-pcre -qt-harfbuzz -qt-freetype \
             -no-feature-system-libb2 \
             -optimize-size || exit 1
-          
+
           # Build and install
           JOBS=$(nproc)
           cmake --build . --parallel $JOBS || exit 1
           cmake --install . || exit 1
-          
+
           # Return to workspace root
-          cd ..
-          
+          cd "${WORKSPACE_ROOT}"
+
           # Verify Qt installation
           if [ ! -d "qt-static/lib/cmake/Qt6" ]; then
             echo "Error: Qt installation failed - Qt6 cmake files not found"
+            echo "Current directory: $(pwd)"
+            echo "Contents:"
             ls -la
             exit 1
           fi
-          
-          echo "Qt installation verified successfully"
-          
-          # Clean up source tree
-          rm -rf "${QT_SRC_DIR}" "${QT_SRC_DIR}.tar.xz"
+
+          echo "Qt installation verified successfully at $(pwd)/qt-static"
+
+          # Clean up Qt source tree to free disk space and prevent
+          # QML import scanner from picking up test files with broken QML
+          rm -rf "${QT_SRC_DIR}"
 
       - name: Compress Qt for release cache
         if: steps.cache-qt.outputs.cache-hit != 'true' && steps.release-cache.outputs.release-cache-hit != 'true'
@@ -432,6 +451,9 @@ jobs:
       - name: Package Linux build
         if: startsWith(github.ref, 'refs/tags/')
         run: |
+          VERSION="${{ steps.version.outputs.version_name }}"
+
+          # Raw binary
           mkdir -p package
           cmake --install build --config Release --prefix "$(pwd)/package"
           mv package/bin/apppaqetN package/paqetN
@@ -440,16 +462,267 @@ jobs:
           echo "Single executable created: package/paqetN"
           ls -lh package/paqetN
 
+          # Build .deb package
+          DEB_DIR=paqetn_${VERSION}_amd64
+          mkdir -p ${DEB_DIR}/DEBIAN
+          mkdir -p ${DEB_DIR}/usr/bin
+          mkdir -p ${DEB_DIR}/usr/share/applications
+          mkdir -p ${DEB_DIR}/usr/share/icons/hicolor/256x256/apps
+
+          cp package/paqetN ${DEB_DIR}/usr/bin/paqetn
+
+          cat > ${DEB_DIR}/DEBIAN/control <<EOF
+          Package: paqetn
+          Version: ${VERSION}
+          Section: net
+          Priority: optional
+          Architecture: amd64
+          Maintainer: paqetN <noreply@paqetn.dev>
+          Description: paqetN proxy configuration manager
+           A desktop application for managing paqet proxy configurations.
+          EOF
+          # Remove leading spaces from control file (heredoc indentation)
+          sed -i 's/^          //' ${DEB_DIR}/DEBIAN/control
+
+          cat > ${DEB_DIR}/usr/share/applications/paqetn.desktop <<EOF
+          [Desktop Entry]
+          Name=paqetN
+          Comment=Paqet proxy configuration manager
+          Exec=paqetn
+          Icon=paqetn
+          Terminal=false
+          Type=Application
+          Categories=Network;Utility;
+          EOF
+          sed -i 's/^          //' ${DEB_DIR}/usr/share/applications/paqetn.desktop
+
+          # Copy app icon if available
+          if [ -f assets/icons/app_icon.png ]; then
+            cp assets/icons/app_icon.png ${DEB_DIR}/usr/share/icons/hicolor/256x256/apps/paqetn.png
+          fi
+
+          dpkg-deb --build --root-owner-group ${DEB_DIR}
+          mv ${DEB_DIR}.deb package/paqetn_${VERSION}_amd64.deb
+          echo "Deb package created:"
+          ls -lh package/paqetn_${VERSION}_amd64.deb
+
       - name: Upload Linux artifact
         if: startsWith(github.ref, 'refs/tags/')
         uses: actions/upload-artifact@v4
         with:
           name: paqetN-linux
-          path: package/paqetN
+          path: |
+            package/paqetN
+            package/paqetn_*.deb
+
+  build-macos:
+    runs-on: macos-14
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Extract version from tag
+        id: version
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            TAG="${{ github.ref_name }}"
+            VERSION_NAME="${TAG#v}"
+            echo "version_name=$VERSION_NAME" >> $GITHUB_OUTPUT
+            echo "Extracted version: $VERSION_NAME from tag: $TAG"
+          else
+            echo "version_name=0.1.0" >> $GITHUB_OUTPUT
+            echo "No tag detected, using default version: 0.1.0"
+          fi
+
+      - name: Install system dependencies
+        run: |
+          brew install ninja pkg-config
+
+      - name: Cache Qt static build
+        id: cache-qt
+        uses: actions/cache@v4
+        with:
+          path: |
+            qt-static
+          key: qt-static-6.10.2-macos-arm64-${{ runner.os }}
+          restore-keys: |
+            qt-static-6.10.2-macos-arm64-${{ runner.os }}
+
+      - name: Download Qt from release cache
+        id: release-cache
+        if: steps.cache-qt.outputs.cache-hit != 'true'
+        run: |
+          echo "Actions cache missed, trying release asset cache..."
+          if gh release download qt-cache --pattern "qt-static-6.10.2-macos-arm64.tar.zst" --dir . 2>/dev/null; then
+            echo "Downloaded Qt from release cache, extracting..."
+            tar --zstd -xf qt-static-6.10.2-macos-arm64.tar.zst
+            if [ -d "qt-static/lib/cmake/Qt6" ]; then
+              echo "release-cache-hit=true" >> $GITHUB_OUTPUT
+              echo "Qt extracted and verified successfully"
+            else
+              echo "release-cache-hit=false" >> $GITHUB_OUTPUT
+              echo "Extraction succeeded but Qt6 cmake files not found, will rebuild"
+              rm -rf qt-static
+            fi
+          else
+            echo "release-cache-hit=false" >> $GITHUB_OUTPUT
+            echo "No release cache found, will build from source"
+          fi
+
+      - name: Download and build static Qt
+        if: steps.cache-qt.outputs.cache-hit != 'true' && steps.release-cache.outputs.release-cache-hit != 'true'
+        run: |
+          QT_VERSION=6.10.2
+          QT_SRC_DIR=qt-everywhere-src-${QT_VERSION}
+          WORKSPACE_ROOT=$(pwd)
+          QT_INSTALL_PREFIX=${WORKSPACE_ROOT}/qt-static
+
+          wget -q https://download.qt.io/official_releases/qt/6.10/${QT_VERSION}/single/${QT_SRC_DIR}.tar.xz
+          tar -xf ${QT_SRC_DIR}.tar.xz
+          rm -f ${QT_SRC_DIR}.tar.xz
+          cd ${QT_SRC_DIR}
+
+          # Configure Qt for static build (Cocoa backend is default on macOS)
+          ./configure -static -release -opensource -confirm-license \
+            -prefix "${QT_INSTALL_PREFIX}" \
+            -cmake-generator "Ninja" \
+            -skip qtwebengine -skip qtmultimedia -skip qt3d -skip qtspeech -skip qtsensors -skip qtserialbus \
+            -skip qtwebchannel -skip qtwebview -skip qtdoc -skip qttools -skip qttranslations \
+            -skip qtcharts -skip qtlocation -skip qtpositioning -skip qtserialport \
+            -skip qtbluetooth -skip qtnfc -skip qtconnectivity \
+            -skip qtgraphs -skip qtgrpc -skip qtmqtt -skip qtcoap \
+            -skip qtquicktimeline -skip qtlanguageserver \
+            -skip qtremoteobjects -skip qtscxml -skip qtscript \
+            -skip qtquick3d -skip qtquick3dphysics \
+            -skip qtdatavis3d -skip qtopcua -skip qtquickeffectmaker \
+            -skip qtwayland -skip qtvirtualkeyboard -skip qthttpserver -skip qtlottie \
+            -nomake examples -nomake tests \
+            -qt-zlib -qt-libpng -qt-libjpeg -qt-pcre -qt-harfbuzz -qt-freetype \
+            -no-feature-system-libb2 \
+            -optimize-size || exit 1
+
+          # Build and install
+          JOBS=$(sysctl -n hw.ncpu)
+          cmake --build . --parallel $JOBS || exit 1
+          cmake --install . || exit 1
+
+          # Return to workspace root
+          cd "${WORKSPACE_ROOT}"
+
+          # Verify Qt installation
+          if [ ! -d "qt-static/lib/cmake/Qt6" ]; then
+            echo "Error: Qt installation failed - Qt6 cmake files not found"
+            echo "Current directory: $(pwd)"
+            echo "Contents:"
+            ls -la
+            exit 1
+          fi
+
+          echo "Qt installation verified successfully at $(pwd)/qt-static"
+
+          # Clean up Qt source tree to free disk space
+          rm -rf "${QT_SRC_DIR}"
+
+      - name: Compress Qt for release cache
+        if: steps.cache-qt.outputs.cache-hit != 'true' && steps.release-cache.outputs.release-cache-hit != 'true'
+        run: |
+          echo "Compressing Qt static build for release cache..."
+          tar --zstd -cf qt-static-6.10.2-macos-arm64.tar.zst qt-static/
+          ARCHIVE_SIZE=$(du -h qt-static-6.10.2-macos-arm64.tar.zst | cut -f1)
+          echo "Archive size: ${ARCHIVE_SIZE}"
+
+      - name: Upload Qt to release cache
+        if: steps.cache-qt.outputs.cache-hit != 'true' && steps.release-cache.outputs.release-cache-hit != 'true'
+        run: |
+          # Create the cache release if it doesn't exist, then upload
+          if ! gh release view qt-cache &>/dev/null; then
+            echo "Creating qt-cache release..."
+            gh release create qt-cache \
+              --title "Build Cache (Development)" \
+              --notes "Prebuilt static Qt for CI. This release is used as a build cache." \
+              --prerelease
+          fi
+
+          echo "Uploading Qt archive to release..."
+          gh release upload qt-cache qt-static-6.10.2-macos-arm64.tar.zst --clobber
+          echo "Upload complete"
+
+      - name: Setup Qt PATH (cached)
+        if: steps.cache-qt.outputs.cache-hit == 'true' || steps.release-cache.outputs.release-cache-hit == 'true'
+        run: |
+          echo "$(pwd)/qt-static/bin" >> $GITHUB_PATH
+
+      - name: Build QuaZip statically
+        run: |
+          JOBS=$(sysctl -n hw.ncpu)
+          QT_STATIC_DIR=$(pwd)/qt-static
+
+          if [ ! -d "qt-static/lib/cmake/Qt6" ]; then
+            echo "Error: Qt6 cmake directory not found"
+            ls -la qt-static/lib/cmake/ 2>/dev/null || echo "qt-static directory does not exist"
+            exit 1
+          fi
+
+          echo "Qt6 found at ${QT_STATIC_DIR}"
+
+          cd 3rdparty/quazip
+          mkdir -p build
+          cd build
+          cmake .. -G "Ninja" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_SHARED_LIBS=OFF \
+            -DCMAKE_INSTALL_PREFIX="${QT_STATIC_DIR}" \
+            -DCMAKE_PREFIX_PATH="${QT_STATIC_DIR}" \
+            -DQUAZIP_QT_MAJOR_VERSION=6
+          cmake --build . --parallel $JOBS
+          cmake --install .
+
+      - name: Configure CMake for static build
+        run: |
+          QT_STATIC_DIR=$(pwd)/qt-static
+          cmake -B build -G "Ninja" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DAPP_VERSION="${{ steps.version.outputs.version_name }}" \
+            -DCMAKE_INSTALL_PREFIX=install \
+            -DCMAKE_PREFIX_PATH="${QT_STATIC_DIR}" \
+            -DBUILD_SHARED_LIBS=OFF
+
+      - name: Build
+        run: |
+          JOBS=$(sysctl -n hw.ncpu)
+          cmake --build build --parallel $JOBS
+
+      - name: Package macOS build
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          mkdir -p package
+          cmake --install build --config Release --prefix "$(pwd)/package"
+          # MACOSX_BUNDLE + BUNDLE DESTINATION . installs .app at prefix root
+          echo "Installed contents:"
+          ls -la package/
+          mv package/apppaqetN.app package/paqetN.app
+          # Create zip preserving macOS resource forks and metadata
+          cd package
+          ditto -c -k --sequesterRsrc --keepParent paqetN.app paqetN-macos-arm64.zip
+          echo "macOS app bundle created:"
+          ls -lh paqetN-macos-arm64.zip
+
+      - name: Upload macOS artifact
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: actions/upload-artifact@v4
+        with:
+          name: paqetN-macos
+          path: package/paqetN-macos-arm64.zip
 
   release:
     if: startsWith(github.ref, 'refs/tags/')
-    needs: [ build-windows, build-linux ]
+    needs: [ build-windows, build-linux, build-macos ]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -468,17 +741,25 @@ jobs:
           name: paqetN-linux
           path: artifacts/linux
 
+      - name: Download macOS artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: paqetN-macos
+          path: artifacts/macos
+
       - name: Create GitHub Release
         run: |
           TAG="${{ github.ref_name }}"
           VERSION="${TAG#v}"
-          
+
           echo "Creating release ${TAG} with artifacts:"
           ls -lhR artifacts/
-          
+
           gh release create "${TAG}" \
             --repo "${{ github.repository }}" \
             --title "paqetN ${VERSION}" \
             --generate-notes \
             artifacts/windows/paqetN.exe#paqetN-${VERSION}-windows-amd64.exe \
-            artifacts/linux/paqetN#paqetN-${VERSION}-linux-amd64
+            artifacts/linux/paqetN#paqetN-${VERSION}-linux-amd64 \
+            artifacts/linux/paqetn_${VERSION}_amd64.deb#paqetn_${VERSION}_amd64.deb \
+            artifacts/macos/paqetN-macos-arm64.zip#paqetN-${VERSION}-macos-arm64.zip
