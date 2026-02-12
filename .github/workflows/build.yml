@@ -115,6 +115,7 @@ jobs:
             -skip qtquick3d -skip qtquick3dphysics \
             -skip qtdatavis3d -skip qtopcua -skip qtquickeffectmaker \
             -skip qtwayland -skip qtvirtualkeyboard -skip qthttpserver -skip qtlottie \
+            -skip qtimageformats \
             -nomake examples -nomake tests \
             -qt-zlib -qt-libpng -qt-libjpeg -qt-pcre -qt-harfbuzz -qt-freetype \
             -no-feature-system-libb2 \
@@ -365,6 +366,7 @@ jobs:
             -prefix "${QT_INSTALL_PREFIX}" \
             -cmake-generator "Ninja" \
             -xcb \
+            -no-icu \
             -skip qtwebengine -skip qtmultimedia -skip qt3d -skip qtspeech -skip qtsensors -skip qtserialbus \
             -skip qtwebchannel -skip qtwebview -skip qtdoc -skip qttools -skip qttranslations \
             -skip qtcharts -skip qtlocation -skip qtpositioning -skip qtserialport \
@@ -375,6 +377,7 @@ jobs:
             -skip qtquick3d -skip qtquick3dphysics \
             -skip qtdatavis3d -skip qtopcua -skip qtquickeffectmaker \
             -skip qtwayland -skip qtvirtualkeyboard -skip qthttpserver -skip qtlottie \
+            -skip qtimageformats \
             -nomake examples -nomake tests \
             -qt-zlib -qt-libpng -qt-libjpeg -qt-pcre -qt-harfbuzz -qt-freetype \
             -no-feature-system-libb2 \
@@ -631,9 +634,10 @@ jobs:
             -skip qtquick3d -skip qtquick3dphysics \
             -skip qtdatavis3d -skip qtopcua -skip qtquickeffectmaker \
             -skip qtwayland -skip qtvirtualkeyboard -skip qthttpserver -skip qtlottie \
+            -skip qtimageformats \
             -nomake examples -nomake tests \
             -qt-zlib -qt-libpng -qt-libjpeg -qt-pcre -qt-harfbuzz -qt-freetype \
-            -no-feature-system-libb2 \
+            -no-icu -no-feature-system-libb2 \
             -no-feature-brotli \
             -optimize-size || exit 1
 
