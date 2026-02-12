@@ -7,6 +7,9 @@ FluPage {
     id: settingsPage
     title: ""
     padding: 0
+    background: Rectangle {
+        color: FluTheme.dark ? Qt.rgba(18/255, 18/255, 20/255, 1) : FluTheme.windowBackgroundColor
+    }
 
     Component.onCompleted: {
         socksPortField.text = String(paqetController.getSocksPort())

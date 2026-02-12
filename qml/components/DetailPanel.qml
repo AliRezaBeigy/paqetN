@@ -15,7 +15,7 @@ Rectangle {
     signal exportRequested(string configId)
 
     implicitWidth: 320
-    color: FluTheme.dark ? Qt.rgba(30/255, 36/255, 48/255, 1) : window.cardColor
+    color: FluTheme.dark ? Qt.rgba(24/255, 24/255, 27/255, 1) : window.cardColor
 
     property string cfgId: configData && configData.id ? configData.id : ""
     property string cfgName: configData && configData.name ? configData.name : ""

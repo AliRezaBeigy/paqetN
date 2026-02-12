@@ -7,6 +7,9 @@ FluPage {
     id: hostsPage
     title: ""
     padding: 0
+    background: Rectangle {
+        color: FluTheme.dark ? Qt.rgba(18/255, 18/255, 20/255, 1) : FluTheme.windowBackgroundColor
+    }
 
     RowLayout {
         anchors.fill: parent
@@ -34,6 +37,9 @@ FluPage {
                 FluFilledButton {
                     id: addConfigBtn
                     text: qsTr("Add config")
+                    normalColor: FluTheme.dark ? "#6366F1" : FluTheme.primaryColor
+                    hoverColor: FluTheme.dark ? "#818CF8" : Qt.lighter(FluTheme.primaryColor, 1.1)
+                    pressedColor: FluTheme.dark ? "#4F46E5" : Qt.darker(FluTheme.primaryColor, 1.1)
                     textColor: "#FFFFFF"
                     onClicked: addConfigMenu.popup(addConfigBtn, 0, addConfigBtn.height + 4)
                 }

@@ -112,14 +112,17 @@ FluWindow {
     property var networkAdapters: []
     property string selectedNetworkInterface: ""
 
-    readonly property var accentPalette: ["#5BA3F5", "#3DD68C", "#FFC947", "#FF6B6B", "#B794F6", "#F882D1", "#36D9EE", "#FF9A56"]
-    readonly property color successColor: FluTheme.dark ? "#3DD68C" : "#22c55e"
-    readonly property color warningColor: FluTheme.dark ? "#FFC947" : "#f59e0b"
-    readonly property color tagColor: FluTheme.dark ? "#2D3B4E" : "#e2e8f0"
-    readonly property color surfaceColor: FluTheme.dark ? Qt.rgba(26/255, 32/255, 44/255, 1) : Qt.rgba(1,1,1,1)
-    readonly property color cardColor: FluTheme.dark ? Qt.rgba(35/255, 42/255, 56/255, 1) : Qt.rgba(1,1,1,1)
-    readonly property color cardBorderColor: FluTheme.dark ? Qt.rgba(70/255, 80/255, 100/255, 1) : FluTheme.dividerColor
-    readonly property color selectedCardColor: FluTheme.dark ? Qt.rgba(42/255, 52/255, 70/255, 1) : Qt.lighter(cardColor, 1.1)
+    // Modern Dark Theme - Slate/Charcoal palette with vibrant accents
+    readonly property var accentPalette: ["#818CF8", "#34D399", "#FBBF24", "#F87171", "#C084FC", "#F472B6", "#22D3EE", "#FB923C"]
+    readonly property color successColor: FluTheme.dark ? "#34D399" : "#22c55e"
+    readonly property color warningColor: FluTheme.dark ? "#FBBF24" : "#f59e0b"
+    readonly property color errorColor: FluTheme.dark ? "#F87171" : "#ef4444"
+    readonly property color tagColor: FluTheme.dark ? "#3F3F46" : "#e2e8f0"
+    readonly property color surfaceColor: FluTheme.dark ? Qt.rgba(9/255, 9/255, 11/255, 1) : Qt.rgba(1,1,1,1)
+    readonly property color cardColor: FluTheme.dark ? Qt.rgba(39/255, 39/255, 42/255, 1) : Qt.rgba(1,1,1,1)
+    readonly property color cardBorderColor: FluTheme.dark ? Qt.rgba(63/255, 63/255, 70/255, 1) : FluTheme.dividerColor
+    readonly property color selectedCardColor: FluTheme.dark ? Qt.rgba(52/255, 52/255, 56/255, 1) : Qt.lighter(cardColor, 1.1)
+    readonly property color hoverCardColor: FluTheme.dark ? Qt.rgba(46/255, 46/255, 50/255, 1) : Qt.lighter(cardColor, 0.98)
 
     Component.onCompleted: {
         FluApp.windowIcon = "qrc:/assets/assets/icons/app_icon.png"

@@ -51,7 +51,7 @@ FluPopup {
             Layout.fillWidth: true
             Layout.preferredHeight: 60
             radius: 5
-            color: FluTheme.dark ? Qt.rgba(32/255, 32/255, 32/255, 1) : Qt.rgba(243/255, 243/255, 243/255, 1)
+            color: FluTheme.dark ? Qt.rgba(32/255, 32/255, 35/255, 1) : Qt.rgba(243/255, 243/255, 243/255, 1)
 
             RowLayout {
                 anchors.fill: parent
