@@ -24,10 +24,10 @@ FluPage {
             // Top bar
             RowLayout {
                 Layout.fillWidth: true
-                Layout.leftMargin: 20
-                Layout.rightMargin: 20
-                Layout.topMargin: 16
-                Layout.bottomMargin: 12
+                Layout.leftMargin: 24
+                Layout.rightMargin: 24
+                Layout.topMargin: 20
+                Layout.bottomMargin: 16
 
                 FluText {
                     text: qsTr("Hosts")
@@ -63,22 +63,22 @@ FluPage {
                     ColumnLayout {
                         id: cardColumn
                         width: flickArea.width
-                        spacing: 20
+                        spacing: 24
 
                         // Groups section
                         FluText {
                             text: qsTr("Groups")
                             font: FluTextStyle.BodyStrong
                             color: FluTheme.fontPrimaryColor
-                            Layout.leftMargin: 20
+                            Layout.leftMargin: 24
                             visible: window.groupsModel.length > 0
                         }
 
                         Flow {
                             Layout.fillWidth: true
-                            Layout.leftMargin: 20
-                            Layout.rightMargin: 20
-                            spacing: 12
+                            Layout.leftMargin: 24
+                            Layout.rightMargin: 24
+                            spacing: 14
                             visible: window.groupsModel.length > 0
 
                             Repeater {
@@ -89,8 +89,8 @@ FluPage {
                                     hostCount: modelData.count
                                     selected: window.activeGroupFilter === modelData.name
                                     width: Math.min(
-                                        (cardColumn.width - 40 - 12) / 2,
-                                        400
+                                        (cardColumn.width - 48 - 14) / 2,
+                                        440
                                     )
                                     onClicked: {
                                         window.activeGroupFilter = (window.activeGroupFilter === modelData.name) ? "" : modelData.name
@@ -107,15 +107,15 @@ FluPage {
                             text: window.activeGroupFilter.length > 0 ? window.activeGroupFilter : qsTr("Hosts")
                             font: FluTextStyle.BodyStrong
                             color: FluTheme.fontPrimaryColor
-                            Layout.leftMargin: 20
+                            Layout.leftMargin: 24
                             visible: window.groupsModel.length > 0
                         }
 
                         Flow {
                             Layout.fillWidth: true
-                            Layout.leftMargin: 20
-                            Layout.rightMargin: 20
-                            spacing: 12
+                            Layout.leftMargin: 24
+                            Layout.rightMargin: 24
+                            spacing: 14
 
                             Repeater {
                                 model: paqetController.configs
@@ -123,8 +123,8 @@ FluPage {
                                 HostCard {
                                     visible: window.activeGroupFilter === "" || model.group === window.activeGroupFilter
                                     width: visible ? Math.min(
-                                        (cardColumn.width - 40 - 12) / 2,
-                                        400
+                                        (cardColumn.width - 48 - 14) / 2,
+                                        440
                                     ) : 0
                                     height: visible ? implicitHeight : 0
                                     configId: model.configId
@@ -184,7 +184,7 @@ FluPage {
         DetailPanel {
             id: detailPanel
             Layout.fillHeight: true
-            Layout.preferredWidth: 320
+            Layout.preferredWidth: 360
             visible: !!paqetController.selectedConfigId
             configData: paqetController.selectedConfigData
             isRunning: paqetController.isRunning

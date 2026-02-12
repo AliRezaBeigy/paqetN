@@ -24,15 +24,15 @@ AbstractButton {
         return window.accentPalette[Math.abs(hash) % window.accentPalette.length]
     }
 
-    implicitHeight: 96
+    implicitHeight: 110
     hoverEnabled: true
-    leftPadding: 12
-    rightPadding: 12
-    topPadding: 16
-    bottomPadding: 16
+    leftPadding: 16
+    rightPadding: 16
+    topPadding: 18
+    bottomPadding: 18
 
     background: Rectangle {
-        radius: 4
+        radius: 6
         border.width: root.selected ? 2 : 1
         border.color: root.selected ? FluTheme.primaryColor : window.cardBorderColor
         color: root.selected ? window.selectedCardColor : window.cardColor
@@ -46,11 +46,11 @@ AbstractButton {
     }
 
     contentItem: RowLayout {
-        spacing: 12
+        spacing: 14
 
         Rectangle {
             width: 6
-            height: parent.height - 16
+            height: parent.height - 20
             radius: 3
             color: root.accentColor
             Layout.alignment: Qt.AlignVCenter
@@ -60,7 +60,7 @@ AbstractButton {
 
         ColumnLayout {
             Layout.fillWidth: true
-            spacing: 6
+            spacing: 8
 
             FluText {
                 text: root.name || root.serverAddr
@@ -70,11 +70,11 @@ AbstractButton {
             }
 
             Row {
-                spacing: 6
+                spacing: 8
 
                 Rectangle {
-                    width: tagEncLabel.implicitWidth + 16
-                    height: 24
+                    width: tagEncLabel.implicitWidth + 20
+                    height: 28
                     radius: 999
                     color: window.tagColor
                     visible: root.kcpBlock.length > 0
@@ -89,8 +89,8 @@ AbstractButton {
                 }
 
                 Rectangle {
-                    width: tagModeLabel.implicitWidth + 16
-                    height: 24
+                    width: tagModeLabel.implicitWidth + 20
+                    height: 28
                     radius: 999
                     color: window.tagColor
                     visible: root.kcpMode.length > 0

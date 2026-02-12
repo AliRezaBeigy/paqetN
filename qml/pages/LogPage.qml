@@ -13,17 +13,17 @@ FluPage {
 
     ColumnLayout {
         anchors.fill: parent
-        anchors.margins: 10
-        spacing: 8
+        anchors.margins: 16
+        spacing: 12
 
         // Top action bar
         FluFrame {
             Layout.fillWidth: true
-            padding: 8
+            padding: 12
 
             RowLayout {
                 anchors.fill: parent
-                spacing: 8
+                spacing: 12
 
                 FluIconButton {
                     iconSource: FluentIcons.Copy

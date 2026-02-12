@@ -5,7 +5,7 @@ import FluentUI 1.0
 
 FluPopup {
     id: root
-    implicitWidth: Math.min(580, window.width - 80)
+    implicitWidth: Math.min(640, window.width - 80)
     implicitHeight: Math.min(layout_root.height, window.height - 100)
     property string configId: ""
     property var config: ({})
@@ -132,10 +132,10 @@ FluPopup {
         FluText {
             text: root.configId ? qsTr("Edit config") : qsTr("Add config")
             font: FluTextStyle.Title
-            topPadding: 20
-            leftPadding: 20
-            rightPadding: 20
-            bottomPadding: 8
+            topPadding: 24
+            leftPadding: 24
+            rightPadding: 24
+            bottomPadding: 12
         }
 
         // Scrollable form
@@ -151,35 +151,36 @@ FluPopup {
 
             ColumnLayout {
                 id: formLayout
-                width: parent.width - 40
+                width: parent.width - 48
                 anchors.horizontalCenter: parent.horizontalCenter
-                spacing: 12
+                spacing: 14
 
                 // Connection section
                 FluText {
                     text: qsTr("Connection")
                     font: FluTextStyle.BodyStrong
                     color: FluTheme.fontSecondaryColor
-                    topPadding: 4
-                    bottomPadding: 4
+                    topPadding: 6
+                    bottomPadding: 6
                 }
 
                 GridLayout {
                     columns: 2
-                    rowSpacing: 12
-                    columnSpacing: 12
+                    rowSpacing: 14
+                    columnSpacing: 14
                     Layout.fillWidth: true
 
                     FluText { text: qsTr("Name"); font: FluTextStyle.Body }
-                    FluTextBox { id: nameField; Layout.fillWidth: true; placeholderText: qsTr("Optional display name") }
+                    FluTextBox { id: nameField; Layout.fillWidth: true; Layout.preferredHeight: 44; placeholderText: qsTr("Optional display name") }
                     FluText { text: qsTr("Group"); font: FluTextStyle.Body }
-                    FluTextBox { id: groupField; Layout.fillWidth: true; placeholderText: qsTr("Optional group name") }
+                    FluTextBox { id: groupField; Layout.fillWidth: true; Layout.preferredHeight: 44; placeholderText: qsTr("Optional group name") }
                     FluText { text: qsTr("Server address"); font: FluTextStyle.Body }
-                    FluTextBox { id: serverAddrField; Layout.fillWidth: true; placeholderText: "host:port" }
+                    FluTextBox { id: serverAddrField; Layout.fillWidth: true; Layout.preferredHeight: 44; placeholderText: "host:port" }
                     FluText { text: qsTr("Encryption"); font: FluTextStyle.Body }
                     FluComboBox {
                         id: kcpBlockCombo
                         Layout.fillWidth: true
+                        Layout.preferredHeight: 44
                         model: kcpBlockOptions
                     }
                 }
@@ -196,20 +197,21 @@ FluPopup {
 
                 GridLayout {
                     columns: 2
-                    rowSpacing: 12
-                    columnSpacing: 12
+                    rowSpacing: 14
+                    columnSpacing: 14
                     Layout.fillWidth: true
 
                     FluText { text: qsTr("KCP key"); font: FluTextStyle.Body }
-                    FluPasswordBox { id: kcpKeyField; Layout.fillWidth: true }
+                    FluPasswordBox { id: kcpKeyField; Layout.fillWidth: true; Layout.preferredHeight: 44 }
                     FluText { text: qsTr("KCP mode"); font: FluTextStyle.Body }
                     FluComboBox {
                         id: kcpModeCombo
                         Layout.fillWidth: true
+                        Layout.preferredHeight: 44
                         model: kcpModeOptions
                     }
                     FluText { text: qsTr("MTU"); font: FluTextStyle.Body }
-                    FluTextBox { id: mtuField; Layout.fillWidth: true; placeholderText: "1350"; validator: IntValidator { bottom: 50; top: 1500 } }
+                    FluTextBox { id: mtuField; Layout.fillWidth: true; Layout.preferredHeight: 44; placeholderText: "1350"; validator: IntValidator { bottom: 50; top: 1500 } }
                 }
 
                 // Advanced section
@@ -224,33 +226,33 @@ FluPopup {
 
                 GridLayout {
                     columns: 2
-                    rowSpacing: 12
-                    columnSpacing: 12
+                    rowSpacing: 14
+                    columnSpacing: 14
                     Layout.fillWidth: true
 
                     FluText { text: qsTr("Connections"); font: FluTextStyle.Body }
-                    FluTextBox { id: connField; Layout.fillWidth: true; placeholderText: "1"; validator: IntValidator { bottom: 1; top: 256 } }
+                    FluTextBox { id: connField; Layout.fillWidth: true; Layout.preferredHeight: 44; placeholderText: "1"; validator: IntValidator { bottom: 1; top: 256 } }
                     FluText { text: qsTr("Local TCP flags"); font: FluTextStyle.Body }
-                    FluTextBox { id: localFlagField; Layout.fillWidth: true; placeholderText: "PA, S" }
+                    FluTextBox { id: localFlagField; Layout.fillWidth: true; Layout.preferredHeight: 44; placeholderText: "PA, S" }
                     FluText { text: qsTr("Remote TCP flags"); font: FluTextStyle.Body }
-                    FluTextBox { id: remoteFlagField; Layout.fillWidth: true; placeholderText: "PA, S" }
+                    FluTextBox { id: remoteFlagField; Layout.fillWidth: true; Layout.preferredHeight: 44; placeholderText: "PA, S" }
                 }
 
-                Item { Layout.preferredHeight: 8 }
+                Item { Layout.preferredHeight: 12 }
             }
         }
 
         // Footer buttons
         Rectangle {
             Layout.fillWidth: true
-            Layout.preferredHeight: 60
-            radius: 5
+            Layout.preferredHeight: 72
+            radius: 6
             color: FluTheme.dark ? Qt.lighter(window.cardColor, 1.05) : Qt.darker(window.cardColor, 1.02)
 
             RowLayout {
                 anchors.fill: parent
-                anchors.margins: 10
-                spacing: 10
+                anchors.margins: 14
+                spacing: 12
 
                 Item { Layout.fillWidth: true; Layout.fillHeight: true }
                 Item {

@@ -19,15 +19,15 @@ AbstractButton {
         return window.accentPalette[Math.abs(hash) % window.accentPalette.length]
     }
 
-    implicitHeight: 88
+    implicitHeight: 100
     hoverEnabled: true
-    leftPadding: 12
-    rightPadding: 12
-    topPadding: 16
-    bottomPadding: 16
+    leftPadding: 16
+    rightPadding: 16
+    topPadding: 18
+    bottomPadding: 18
 
     background: Rectangle {
-        radius: 4
+        radius: 6
         border.width: root.selected ? 2 : 1
         border.color: root.selected ? FluTheme.primaryColor : window.cardBorderColor
         color: root.selected ? window.selectedCardColor : window.cardColor
@@ -41,25 +41,25 @@ AbstractButton {
     }
 
     contentItem: RowLayout {
-        spacing: 12
+        spacing: 14
 
         Rectangle {
-            width: 40
-            height: 40
-            radius: 20
+            width: 48
+            height: 48
+            radius: 24
             color: root.accentColor
 
             FluText {
                 anchors.centerIn: parent
                 text: root.groupName.length > 0 ? root.groupName.charAt(0).toUpperCase() : "?"
-                font: FluTextStyle.BodyStrong
+                font: FluTextStyle.Subtitle
                 color: "#ffffff"
             }
         }
 
         ColumnLayout {
             Layout.fillWidth: true
-            spacing: 2
+            spacing: 4
 
             FluText {
                 text: root.groupName

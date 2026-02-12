@@ -8,17 +8,17 @@ import FluentUI 1.0
 FluWindow {
     id: window
     title: qsTr("paqetN")
-    width: 1100
-    height: 700
-    minimumWidth: 800
-    minimumHeight: 500
+    width: 1280
+    height: 820
+    minimumWidth: 960
+    minimumHeight: 640
     visible: true
     fitsAppBarWindows: true
     showDark: true
     launchMode: FluWindowType.SingleTask
 
     appBar: FluAppBar {
-        height: 30
+        height: 38
         showDark: true
         darkClickListener: (button) => { handleDarkChanged(button) }
         showMinimize: true
@@ -181,7 +181,7 @@ FluWindow {
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.bottom: parent.bottom
-        height: 48
+        height: 56
         color: window.surfaceColor
         border.color: FluTheme.dividerColor
         border.width: 1
@@ -222,10 +222,10 @@ FluWindow {
 
         RowLayout {
             anchors.fill: parent
-            anchors.leftMargin: 16
-            anchors.rightMargin: 16
+            anchors.leftMargin: 20
+            anchors.rightMargin: 20
             anchors.topMargin: bottomBar.downloadInProgress ? 3 : 0
-            spacing: 12
+            spacing: 14
 
             // Profile name | status - latency (click latency icon to test)
             RowLayout {
@@ -247,9 +247,9 @@ FluWindow {
                     iconSource: FluentIcons.SpeedHigh
                     text: qsTr("Test latency")
                     display: Button.IconOnly
-                    iconSize: 18
-                    implicitWidth: 36
-                    implicitHeight: 36
+                    iconSize: 20
+                    implicitWidth: 40
+                    implicitHeight: 40
                     enabled: !!paqetController.selectedConfigId && paqetController.isRunning
                     onClicked: paqetController.testLatency()
                 }
@@ -268,7 +268,7 @@ FluWindow {
             FluComboBox {
                 id: interfaceCombo
                 visible: !bottomBar.downloadInProgress && window.networkAdapters.length > 1
-                Layout.preferredWidth: 180
+                Layout.preferredWidth: 220
                 property var adapterGuids: {
                     var guids = [""]  // First item is "Auto" with empty guid
                     for (var i = 0; i < window.networkAdapters.length; i++) {
@@ -306,7 +306,7 @@ FluWindow {
 
             FluComboBox {
                 id: proxyModeCombo
-                Layout.preferredWidth: 160
+                Layout.preferredWidth: 180
                 Layout.alignment: Qt.AlignRight
                 property var proxyModeValues: ["none", "system", "tun"]
                 model: [qsTr("Socks only"), qsTr("System proxy"), qsTr("Tun mode")]
@@ -324,9 +324,9 @@ FluWindow {
                 iconSource: FluentIcons.Sync
                 text: qsTr("Restart")
                 display: Button.IconOnly
-                iconSize: 18
-                implicitWidth: 36
-                implicitHeight: 36
+                iconSize: 20
+                implicitWidth: 40
+                implicitHeight: 40
                 enabled: !!paqetController.selectedConfigId
                 onClicked: paqetController.restart()
             }
@@ -341,7 +341,8 @@ FluWindow {
         anchors.bottom: bottomBar.top
         pageMode: FluNavigationViewType.NoStack
         displayMode: FluNavigationViewType.Compact
-        navCompactWidth: 56
+        navCompactWidth: 64
+        cellHeight: 44
         title: "paqetN"
         topPadding: 0
 
@@ -423,7 +424,8 @@ FluWindow {
         contentDelegate: Component {
             FluTextBox {
                 Layout.fillWidth: true
-                Layout.preferredWidth: 300
+                Layout.preferredWidth: 320
+                Layout.preferredHeight: 44
                 placeholderText: qsTr("New group name")
                 text: renameGroupDialog.oldGroupName
                 selectByMouse: true

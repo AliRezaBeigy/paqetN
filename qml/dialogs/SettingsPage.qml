@@ -40,18 +40,18 @@ FluPage {
             FluText {
                 text: qsTr("Settings")
                 font: FluTextStyle.Title
-                Layout.leftMargin: 20
-                Layout.rightMargin: 20
-                Layout.topMargin: 16
-                Layout.bottomMargin: 16
+                Layout.leftMargin: 24
+                Layout.rightMargin: 24
+                Layout.topMargin: 20
+                Layout.bottomMargin: 20
             }
 
             // ── Startup ──
             ColumnLayout {
                 Layout.fillWidth: true
-                Layout.leftMargin: 20
-                Layout.rightMargin: 20
-                spacing: 8
+                Layout.leftMargin: 24
+                Layout.rightMargin: 24
+                spacing: 10
 
                 FluText {
                     text: qsTr("Startup")
@@ -103,9 +103,9 @@ FluPage {
             // ── Appearance ──
             ColumnLayout {
                 Layout.fillWidth: true
-                Layout.leftMargin: 20
-                Layout.rightMargin: 20
-                spacing: 8
+                Layout.leftMargin: 24
+                Layout.rightMargin: 24
+                spacing: 10
 
                 FluText {
                     text: qsTr("Appearance")
@@ -176,6 +176,7 @@ FluPage {
                         FluTextBox {
                             id: socksPortField
                             Layout.fillWidth: true
+                            Layout.preferredHeight: 44
                             text: "1284"
                             validator: IntValidator { bottom: 1; top: 65535 }
                             onEditingFinished: paqetController.setSocksPort(parseInt(text) || 1284)
@@ -194,6 +195,7 @@ FluPage {
                         FluTextBox {
                             id: connectionCheckUrlField
                             Layout.fillWidth: true
+                            Layout.preferredHeight: 44
                             placeholderText: "https://www.gstatic.com/generate_204"
                             onEditingFinished: paqetController.setConnectionCheckUrl(text.trim() || "https://www.gstatic.com/generate_204")
                         }
@@ -202,6 +204,7 @@ FluPage {
                         FluTextBox {
                             id: timeoutField
                             Layout.fillWidth: true
+                            Layout.preferredHeight: 44
                             text: "10"
                             validator: IntValidator { bottom: 3; top: 60 }
                             onEditingFinished: paqetController.setConnectionCheckTimeoutSeconds(parseInt(text) || 10)
@@ -215,9 +218,9 @@ FluPage {
             // ── UI & Logging ──
             ColumnLayout {
                 Layout.fillWidth: true
-                Layout.leftMargin: 20
-                Layout.rightMargin: 20
-                spacing: 8
+                Layout.leftMargin: 24
+                Layout.rightMargin: 24
+                spacing: 10
 
                 FluText {
                     text: qsTr("UI & Logging")
@@ -246,6 +249,7 @@ FluPage {
                         FluComboBox {
                             id: logLevelCombo
                             Layout.fillWidth: true
+                            Layout.preferredHeight: 44
                             model: paqetController.getLogLevels()
                             onActivated: function(index) {
                                 var levels = paqetController.getLogLevels()
@@ -258,6 +262,7 @@ FluPage {
                         FluTextBox {
                             id: paqetPathField
                             Layout.fillWidth: true
+                            Layout.preferredHeight: 44
                             placeholderText: qsTr("Leave empty for default")
                             onEditingFinished: paqetController.setPaqetBinaryPath(text.trim())
                         }

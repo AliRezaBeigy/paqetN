@@ -14,7 +14,7 @@ Rectangle {
     signal deleteRequested(string configId)
     signal exportRequested(string configId)
 
-    implicitWidth: 320
+    implicitWidth: 360
     color: FluTheme.dark ? Qt.rgba(24/255, 24/255, 27/255, 1) : window.cardColor
 
     property string cfgId: configData && configData.id ? configData.id : ""
@@ -72,14 +72,14 @@ Rectangle {
                 }
                 FluFrame {
                     Layout.fillWidth: true
-                    implicitHeight: 40
-                    padding: 12
+                    implicitHeight: 48
+                    padding: 14
                     FluText {
                         anchors.verticalCenter: parent.verticalCenter
                         text: root.cfgServerAddr
                         font: FluTextStyle.Body
                         elide: Text.ElideRight
-                        width: parent.width - 24
+                        width: parent.width - 28
                     }
                 }
             }
@@ -89,7 +89,7 @@ Rectangle {
                 Layout.fillWidth: true
                 Layout.leftMargin: 16
                 Layout.rightMargin: 16
-                spacing: 4
+                spacing: 6
 
                 FluText {
                     text: qsTr("General")
@@ -98,25 +98,25 @@ Rectangle {
                 }
                 FluFrame {
                     Layout.fillWidth: true
-                    implicitHeight: 40
-                    padding: 12
+                    implicitHeight: 48
+                    padding: 14
                     FluText {
                         anchors.verticalCenter: parent.verticalCenter
                         text: root.cfgName || root.cfgServerAddr
                         font: FluTextStyle.Body
                         elide: Text.ElideRight
-                        width: parent.width - 24
+                        width: parent.width - 28
                     }
                 }
 
                 // Tags
                 Flow {
                     Layout.fillWidth: true
-                    spacing: 6
+                    spacing: 8
 
                     Rectangle {
-                        width: grpTagRow.implicitWidth + 16
-                        height: 24
+                        width: grpTagRow.implicitWidth + 20
+                        height: 28
                         radius: 999
                         color: window.tagColor
                         visible: root.cfgGroup.length > 0
@@ -125,7 +125,7 @@ Rectangle {
                             id: grpTagRow
                             anchors.centerIn: parent
                             spacing: 4
-                            FluIcon { iconSource: FluentIcons.Folder; iconSize: 14; iconColor: FluTheme.fontSecondaryColor; anchors.verticalCenter: parent.verticalCenter }
+                            FluIcon { iconSource: FluentIcons.Folder; iconSize: 16; iconColor: FluTheme.fontSecondaryColor; anchors.verticalCenter: parent.verticalCenter }
                             FluText {
                                 text: root.cfgGroup
                                 font: FluTextStyle.Caption
@@ -136,8 +136,8 @@ Rectangle {
                     }
 
                     Rectangle {
-                        width: encTagLabel.implicitWidth + 16
-                        height: 24
+                        width: encTagLabel.implicitWidth + 20
+                        height: 28
                         radius: 999
                         color: window.tagColor
                         visible: root.cfgKcpBlock.length > 0
@@ -152,8 +152,8 @@ Rectangle {
                     }
 
                     Rectangle {
-                        width: modeTagLabel.implicitWidth + 16
-                        height: 24
+                        width: modeTagLabel.implicitWidth + 20
+                        height: 28
                         radius: 999
                         color: window.tagColor
                         visible: root.cfgKcpMode.length > 0
@@ -220,18 +220,18 @@ Rectangle {
                 Layout.leftMargin: 16
                 Layout.rightMargin: 16
                 visible: root.isRunning && root.proxyMode !== "none"
-                width: proxyBadgeRow.implicitWidth + 16
-                height: 24
+                width: proxyBadgeRow.implicitWidth + 20
+                height: 28
                 radius: 999
                 color: root.proxyMode === "tun" ? window.accentPalette : window.tagColor
 
                 Row {
                     id: proxyBadgeRow
                     anchors.centerIn: parent
-                    spacing: 4
+                    spacing: 6
                     FluIcon {
                         iconSource: root.proxyMode === "tun" ? FluentIcons.Globe : FluentIcons.Settings
-                        iconSize: 14
+                        iconSize: 16
                         iconColor: root.proxyMode === "tun" ? "#FFFFFF" : FluTheme.fontSecondaryColor
                         anchors.verticalCenter: parent.verticalCenter
                     }
@@ -249,33 +249,33 @@ Rectangle {
                 Layout.fillWidth: true
                 Layout.leftMargin: 16
                 Layout.rightMargin: 16
-                spacing: 8
+                spacing: 10
 
                 FluIconButton {
                     iconSource: FluentIcons.Edit
                     text: qsTr("Edit")
                     display: Button.IconOnly
-                    iconSize: 18
-                    implicitWidth: 36
-                    implicitHeight: 36
+                    iconSize: 20
+                    implicitWidth: 40
+                    implicitHeight: 40
                     onClicked: root.editRequested(root.cfgId)
                 }
                 FluIconButton {
                     iconSource: FluentIcons.Delete
                     text: qsTr("Delete")
                     display: Button.IconOnly
-                    iconSize: 18
-                    implicitWidth: 36
-                    implicitHeight: 36
+                    iconSize: 20
+                    implicitWidth: 40
+                    implicitHeight: 40
                     onClicked: root.deleteRequested(root.cfgId)
                 }
                 FluIconButton {
                     iconSource: FluentIcons.Share
                     text: qsTr("Export")
                     display: Button.IconOnly
-                    iconSize: 18
-                    implicitWidth: 36
-                    implicitHeight: 36
+                    iconSize: 20
+                    implicitWidth: 40
+                    implicitHeight: 40
                     onClicked: root.exportRequested(root.cfgId)
                 }
             }
