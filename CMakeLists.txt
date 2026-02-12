@@ -71,9 +71,15 @@ set(PAQET_SOURCES
     src/PaqetController.cpp
 )
 
+set(APP_RC "")
+if(WIN32)
+    set(APP_RC ${CMAKE_CURRENT_SOURCE_DIR}/assets/app.rc)
+endif()
+
 qt_add_executable(apppaqetN
     main.cpp
     ${PAQET_SOURCES}
+    ${APP_RC}
 )
 
 target_include_directories(apppaqetN PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
