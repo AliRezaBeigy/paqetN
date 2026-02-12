@@ -52,7 +52,7 @@ FluPage {
                     clip: true
                     boundsBehavior: Flickable.StopAtBounds
                     ScrollBar.vertical: FluScrollBar {}
-                    visible: paqetController.configs.rowCount() > 0
+                    visible: paqetController.configs.count > 0
 
                     ColumnLayout {
                         id: cardColumn
@@ -141,7 +141,7 @@ FluPage {
                 // Empty state
                 ColumnLayout {
                     anchors.centerIn: parent
-                    visible: paqetController.configs.rowCount() === 0
+                    visible: paqetController.configs.count === 0
                     spacing: 8
 
                     FluIcon {

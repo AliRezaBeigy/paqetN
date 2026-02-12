@@ -210,6 +210,16 @@ void PaqetController::setSelectedConfigId(const QString &id) {
     m_selectedConfigId = id;
     m_repo->setLastSelectedId(id);
     emit selectedConfigIdChanged();
+
+    // Check if paqet binary exists and prompt user to download if missing
+    QString binaryPath = m_settings->paqetBinaryPath();
+    if (!m_updateManager || !m_updateManager->isPaqetBinaryAvailable(binaryPath)) {
+        m_logBuffer->append(tr("[PaqetN] ERROR: Paqet binary not found at: %1").arg(binaryPath));
+        m_logBuffer->append(tr("[PaqetN] Please download it from the Updates page."));
+        emit paqetBinaryMissing();
+        return;
+    }
+
     // When user switches profile while connected, restart paqet with the new profile
     if (wasRunning) {
         disconnectAsync([this]() { connectToSelected(); });
@@ -266,6 +276,12 @@ void PaqetController::saveConfig(const QVariantMap &config) {
         if (!newId.isEmpty()) setSelectedConfigId(newId);
     } else {
         m_repo->update(c);
+        // Notify that selected config data changed so UI refreshes
+        if (c.id == m_selectedConfigId)
+            emit selectedConfigIdChanged();
+        // Restart if updated config is the currently connected profile
+        if (c.id == m_connectedConfigId && isRunning())
+            restart();
     }
 }
 

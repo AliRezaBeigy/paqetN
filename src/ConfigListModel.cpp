@@ -37,9 +37,12 @@ QHash<int, QByteArray> ConfigListModel::roleNames() const {
 }
 
 void ConfigListModel::setConfigs(const QList<PaqetConfig> &configs) {
+    int oldCount = m_configs.size();
     beginResetModel();
     m_configs = configs;
     endResetModel();
+    if (m_configs.size() != oldCount)
+        emit countChanged();
 }
 
 PaqetConfig ConfigListModel::configAt(int row) const {

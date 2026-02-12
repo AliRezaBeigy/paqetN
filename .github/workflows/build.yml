@@ -731,6 +731,7 @@ jobs:
       - name: Package macOS build
         if: startsWith(github.ref, 'refs/tags/')
         run: |
+          VERSION="${{ steps.version.outputs.version_name }}"
           mkdir -p package
           cmake --install build --config Release --prefix "$(pwd)/package"
           # MACOSX_BUNDLE + BUNDLE DESTINATION . installs .app at prefix root
@@ -739,16 +740,16 @@ jobs:
           mv package/apppaqetN.app package/paqetN.app
           # Create zip preserving macOS resource forks and metadata
           cd package
-          ditto -c -k --sequesterRsrc --keepParent paqetN.app paqetN-macos-arm64.zip
+          ditto -c -k --sequesterRsrc --keepParent paqetN.app paqetN-${VERSION}-macos-arm64.zip
           echo "macOS app bundle created:"
-          ls -lh paqetN-macos-arm64.zip
+          ls -lh paqetN-${VERSION}-macos-arm64.zip
 
       - name: Upload macOS artifact
         if: startsWith(github.ref, 'refs/tags/')
         uses: actions/upload-artifact@v4
         with:
           name: paqetN-macos
-          path: package/paqetN-macos-arm64.zip
+          path: package/paqetN-*-macos-arm64.zip
 
   release:
     if: startsWith(github.ref, 'refs/tags/')
@@ -834,4 +835,4 @@ jobs:
             artifacts/windows/paqetN-${VERSION}-windows-amd64.zip \
             artifacts/linux/paqetN-${VERSION}-linux-amd64.zip \
             artifacts/linux/paqetn_${VERSION}_amd64.deb \
-            artifacts/macos/paqetN-macos-arm64.zip#paqetN-${VERSION}-macos-arm64.zip
+            artifacts/macos/paqetN-${VERSION}-macos-arm64.zip
