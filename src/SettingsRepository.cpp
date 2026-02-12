@@ -150,3 +150,33 @@ void SettingsRepository::setTunBinaryPath(const QString &path) {
     settings()->setValue(QStringLiteral("tunBinaryPath"), path);
     emit tunBinaryPathChanged();
 }
+
+bool SettingsRepository::startOnBoot() const {
+    return settings()->value(QStringLiteral("startOnBoot"), false).toBool();
+}
+
+void SettingsRepository::setStartOnBoot(bool enabled) {
+    if (startOnBoot() == enabled) return;
+    settings()->setValue(QStringLiteral("startOnBoot"), enabled);
+    emit startOnBootChanged();
+}
+
+bool SettingsRepository::autoHideOnStartup() const {
+    return settings()->value(QStringLiteral("autoHideOnStartup"), true).toBool();
+}
+
+void SettingsRepository::setAutoHideOnStartup(bool enabled) {
+    if (autoHideOnStartup() == enabled) return;
+    settings()->setValue(QStringLiteral("autoHideOnStartup"), enabled);
+    emit autoHideOnStartupChanged();
+}
+
+bool SettingsRepository::closeToTray() const {
+    return settings()->value(QStringLiteral("closeToTray"), true).toBool();
+}
+
+void SettingsRepository::setCloseToTray(bool enabled) {
+    if (closeToTray() == enabled) return;
+    settings()->setValue(QStringLiteral("closeToTray"), enabled);
+    emit closeToTrayChanged();
+}

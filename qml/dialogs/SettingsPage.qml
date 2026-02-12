@@ -17,7 +17,6 @@ FluPage {
         var logIdx = levels.indexOf(paqetController.getLogLevel())
         logLevelCombo.currentIndex = logIdx >= 0 ? logIdx : levels.indexOf("fatal")
         paqetPathField.text = paqetController.getPaqetBinaryPath()
-        tunPathField.text = paqetController.getTunBinaryPath()
     }
 
     Flickable {
@@ -42,6 +41,60 @@ FluPage {
                 Layout.topMargin: 16
                 Layout.bottomMargin: 16
             }
+
+            // ── Startup ──
+            ColumnLayout {
+                Layout.fillWidth: true
+                Layout.leftMargin: 20
+                Layout.rightMargin: 20
+                spacing: 8
+
+                FluText {
+                    text: qsTr("Startup")
+                    font: FluTextStyle.BodyStrong
+                    color: FluTheme.fontSecondaryColor
+                }
+
+                FluFrame {
+                    Layout.fillWidth: true
+                    padding: 16
+
+                    GridLayout {
+                        columns: 2
+                        rowSpacing: 12
+                        columnSpacing: 12
+                        width: parent.width - 32
+
+                        FluText { text: qsTr("Start on boot"); font: FluTextStyle.Body }
+                        FluCheckBox {
+                            id: startOnBootCheck
+                            checked: paqetController.getStartOnBoot()
+                            onClicked: paqetController.setStartOnBoot(checked)
+                        }
+
+                        FluText {
+                            text: qsTr("Auto hide on startup")
+                            font: FluTextStyle.Body
+                            opacity: startOnBootCheck.checked ? 1.0 : 0.5
+                        }
+                        FluCheckBox {
+                            id: autoHideCheck
+                            checked: paqetController.getAutoHideOnStartup()
+                            enabled: startOnBootCheck.checked
+                            onClicked: paqetController.setAutoHideOnStartup(checked)
+                        }
+
+                        FluText { text: qsTr("Close to tray"); font: FluTextStyle.Body }
+                        FluCheckBox {
+                            id: closeToTrayCheck
+                            checked: paqetController.getCloseToTray()
+                            onClicked: paqetController.setCloseToTray(checked)
+                        }
+                    }
+                }
+            }
+
+            Item { Layout.preferredHeight: 16 }
 
             // ── Appearance ──
             ColumnLayout {
@@ -139,42 +192,6 @@ FluPage {
                             text: "10"
                             validator: IntValidator { bottom: 3; top: 60 }
                             onEditingFinished: paqetController.setConnectionCheckTimeoutSeconds(parseInt(text) || 10)
-                        }
-                    }
-                }
-            }
-
-            Item { Layout.preferredHeight: 16 }
-
-            // ── TUN (optional) ──
-            ColumnLayout {
-                Layout.fillWidth: true
-                Layout.leftMargin: 20
-                Layout.rightMargin: 20
-                spacing: 8
-
-                FluText {
-                    text: qsTr("TUN Mode")
-                    font: FluTextStyle.BodyStrong
-                    color: FluTheme.fontSecondaryColor
-                }
-
-                FluFrame {
-                    Layout.fillWidth: true
-                    padding: 16
-
-                    GridLayout {
-                        columns: 2
-                        rowSpacing: 12
-                        columnSpacing: 12
-                        width: parent.width - 32
-
-                        FluText { text: qsTr("hev-socks5-tunnel path"); font: FluTextStyle.Body }
-                        FluTextBox {
-                            id: tunPathField
-                            Layout.fillWidth: true
-                            placeholderText: qsTr("Leave empty for auto (app dir)")
-                            onEditingFinished: paqetController.setTunBinaryPath(text.trim())
                         }
                     }
                 }

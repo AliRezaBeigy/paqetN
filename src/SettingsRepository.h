@@ -47,6 +47,15 @@ public:
     QString tunBinaryPath() const;
     void setTunBinaryPath(const QString &path);
 
+    bool startOnBoot() const;
+    void setStartOnBoot(bool enabled);
+
+    bool autoHideOnStartup() const;
+    void setAutoHideOnStartup(bool enabled);
+
+    bool closeToTray() const;
+    void setCloseToTray(bool enabled);
+
     static const QStringList &logLevels();
     static const QStringList &proxyModes();
     static constexpr int defaultSocksPort = 1284;
@@ -68,6 +77,9 @@ signals:
     void autoUpdatePaqetNChanged();
     void proxyModeChanged();
     void tunBinaryPathChanged();
+    void startOnBootChanged();
+    void autoHideOnStartupChanged();
+    void closeToTrayChanged();
 
 private:
     QSettings *settings() const;

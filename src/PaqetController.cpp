@@ -16,6 +16,8 @@
 #include <QtConcurrent>
 #include <QFutureWatcher>
 #include <QCoreApplication>
+#include <QDir>
+#include <QSettings>
 
 #ifdef Q_OS_WIN
 #include <windows.h>
@@ -729,6 +731,26 @@ QString PaqetController::getTunBinaryPath() const { return m_settings->tunBinary
 void PaqetController::setTunBinaryPath(const QString &path) { m_settings->setTunBinaryPath(path); }
 bool PaqetController::isTunAssetsAvailable() const { return m_tunAssetsManager && m_tunAssetsManager->isTunAssetsAvailable(); }
 void PaqetController::autoDownloadTunAssetsIfMissing() { if (m_tunAssetsManager) m_tunAssetsManager->downloadTunAssets(); }
+
+bool PaqetController::getStartOnBoot() const { return m_settings->startOnBoot(); }
+void PaqetController::setStartOnBoot(bool enabled) {
+    m_settings->setStartOnBoot(enabled);
+#ifdef Q_OS_WIN
+    // Update Windows registry for startup
+    QSettings bootSettings(QStringLiteral("HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Run"),
+                           QSettings::NativeFormat);
+    if (enabled) {
+        QString appPath = QCoreApplication::applicationFilePath();
+        bootSettings.setValue(QStringLiteral("paqetN"), QDir::toNativeSeparators(appPath));
+    } else {
+        bootSettings.remove(QStringLiteral("paqetN"));
+    }
+#endif
+}
+bool PaqetController::getAutoHideOnStartup() const { return m_settings->autoHideOnStartup(); }
+void PaqetController::setAutoHideOnStartup(bool enabled) { m_settings->setAutoHideOnStartup(enabled); }
+bool PaqetController::getCloseToTray() const { return m_settings->closeToTray(); }
+void PaqetController::setCloseToTray(bool enabled) { m_settings->setCloseToTray(enabled); }
 
 QVariantList PaqetController::detectNetworkAdapters() {
     NetworkInfoDetector detector;

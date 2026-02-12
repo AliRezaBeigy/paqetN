@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 import QtQuick.Dialogs
+import Qt.labs.platform as Platform
 import FluentUI 1.0
 
 FluWindow {
@@ -24,6 +25,86 @@ FluWindow {
         showMaximize: true
         showClose: true
         z: 7
+        closeClickListener: function() {
+            if (paqetController.getCloseToTray()) {
+                window.hide()
+            } else {
+                // Hide window immediately so user doesn't see the cleanup freeze
+                window.hide()
+                Qt.callLater(Qt.quit)
+            }
+        }
+    }
+
+    // System Tray Icon
+    Platform.SystemTrayIcon {
+        id: systemTray
+        visible: true
+        icon.source: "qrc:/assets/assets/icons/app_icon.png"
+        tooltip: qsTr("paqetN")
+
+        onActivated: function(reason) {
+            if (reason === Platform.SystemTrayIcon.Trigger ||
+                reason === Platform.SystemTrayIcon.DoubleClick) {
+                window.show()
+                window.raise()
+                window.requestActivate()
+            } else if (reason === Platform.SystemTrayIcon.Context) {
+                systemTray.menu.open()
+            }
+        }
+
+        menu: Platform.Menu {
+            Platform.MenuItem {
+                text: qsTr("Hosts")
+                onTriggered: {
+                    window.show()
+                    window.raise()
+                    window.requestActivate()
+                    nav_view.setCurrentIndex(0)
+                    nav_view.push(Qt.resolvedUrl("pages/HostsPage.qml"))
+                }
+            }
+            Platform.MenuItem {
+                text: qsTr("Log")
+                onTriggered: {
+                    window.show()
+                    window.raise()
+                    window.requestActivate()
+                    nav_view.setCurrentIndex(1)
+                    nav_view.push(Qt.resolvedUrl("pages/LogPage.qml"))
+                }
+            }
+            Platform.MenuItem {
+                text: qsTr("Updates")
+                onTriggered: {
+                    window.show()
+                    window.raise()
+                    window.requestActivate()
+                    nav_view.setCurrentIndex(2)
+                    nav_view.push(Qt.resolvedUrl("pages/UpdatesPage.qml"))
+                }
+            }
+            Platform.MenuItem {
+                text: qsTr("Settings")
+                onTriggered: {
+                    window.show()
+                    window.raise()
+                    window.requestActivate()
+                    nav_view.push(Qt.resolvedUrl("dialogs/SettingsPage.qml"))
+                }
+            }
+            Platform.MenuSeparator {}
+            Platform.MenuItem {
+                text: qsTr("Exit")
+                onTriggered: {
+                    // Hide window immediately so user doesn't see the cleanup freeze
+                    window.hide()
+                    // Small delay to let the hide complete, then quit
+                    Qt.callLater(Qt.quit)
+                }
+            }
+        }
     }
 
     property string activeGroupFilter: ""
@@ -45,6 +126,11 @@ FluWindow {
         else if (t === "light") FluTheme.darkMode = FluThemeType.Light
         else FluTheme.darkMode = FluThemeType.System
         groupsModel = paqetController.getGroups()
+
+        // Auto hide on startup (only when start on boot is enabled)
+        if (paqetController.getStartOnBoot() && paqetController.getAutoHideOnStartup()) {
+            window.hide()
+        }
     }
 
     Connections {

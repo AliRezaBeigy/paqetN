@@ -123,6 +123,14 @@ public:
     Q_INVOKABLE QString getTunBinaryPath() const;
     Q_INVOKABLE void setTunBinaryPath(const QString &path);
     Q_INVOKABLE bool isTunAssetsAvailable() const;
+
+    // Startup & Tray settings
+    Q_INVOKABLE bool getStartOnBoot() const;
+    Q_INVOKABLE void setStartOnBoot(bool enabled);
+    Q_INVOKABLE bool getAutoHideOnStartup() const;
+    Q_INVOKABLE void setAutoHideOnStartup(bool enabled);
+    Q_INVOKABLE bool getCloseToTray() const;
+    Q_INVOKABLE void setCloseToTray(bool enabled);
     Q_INVOKABLE void autoDownloadTunAssetsIfMissing();
 
     // Admin privileges (for TUN mode on Windows)
