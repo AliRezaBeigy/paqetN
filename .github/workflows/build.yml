@@ -115,6 +115,7 @@ jobs:
             -nomake examples -nomake tests \
             -qt-zlib -qt-libpng -qt-libjpeg -qt-pcre -qt-harfbuzz -qt-freetype \
             -no-feature-system-libb2 \
+            -no-feature-brotli \
             -feature-clang \
             -static-runtime \
             -optimize-size || exit 1
@@ -365,6 +366,7 @@ jobs:
             -nomake examples -nomake tests \
             -qt-zlib -qt-libpng -qt-libjpeg -qt-pcre -qt-harfbuzz -qt-freetype \
             -no-feature-system-libb2 \
+            -no-feature-brotli \
             -optimize-size || exit 1
 
           # Build and install (limit parallelism to reduce peak disk usage during PCH/object buildup)
@@ -470,6 +472,13 @@ jobs:
           echo "Single executable created: package/paqetN"
           ls -lh package/paqetN
 
+          # Create zip archive
+          cd package
+          zip paqetN-${VERSION}-linux-amd64.zip paqetN
+          echo "Linux zip created:"
+          ls -lh paqetN-${VERSION}-linux-amd64.zip
+          cd ..
+
           # Build .deb package
           DEB_DIR=paqetn_${VERSION}_amd64
           mkdir -p ${DEB_DIR}/DEBIAN
@@ -520,7 +529,7 @@ jobs:
         with:
           name: paqetN-linux
           path: |
-            package/paqetN
+            package/paqetN-*-linux-amd64.zip
             package/paqetn_*.deb
 
   build-macos:
@@ -613,6 +622,7 @@ jobs:
             -nomake examples -nomake tests \
             -qt-zlib -qt-libpng -qt-libjpeg -qt-pcre -qt-harfbuzz -qt-freetype \
             -no-feature-system-libb2 \
+            -no-feature-brotli \
             -optimize-size || exit 1
 
           # Build and install
@@ -795,7 +805,7 @@ jobs:
           | Platform | File | Description |
           |----------|------|-------------|
           | Windows | [paqetN-${VERSION}-windows-amd64.zip](https://github.com/${{ github.repository }}/releases/download/${TAG}/paqetN-${VERSION}-windows-amd64.zip) | Windows x64 (portable) |
-          | Linux | [paqetN-${VERSION}-linux-amd64](https://github.com/${{ github.repository }}/releases/download/${TAG}/paqetN-${VERSION}-linux-amd64) | Linux x64 binary |
+          | Linux | [paqetN-${VERSION}-linux-amd64.zip](https://github.com/${{ github.repository }}/releases/download/${TAG}/paqetN-${VERSION}-linux-amd64.zip) | Linux x64 (portable) |
           | Linux | [paqetn_${VERSION}_amd64.deb](https://github.com/${{ github.repository }}/releases/download/${TAG}/paqetn_${VERSION}_amd64.deb) | Debian/Ubuntu package |
           | macOS | [paqetN-${VERSION}-macos-arm64.zip](https://github.com/${{ github.repository }}/releases/download/${TAG}/paqetN-${VERSION}-macos-arm64.zip) | macOS Apple Silicon |
 
@@ -810,6 +820,6 @@ jobs:
             --title "paqetN ${VERSION}" \
             --notes "${RELEASE_BODY}" \
             artifacts/windows/paqetN-${VERSION}-windows-amd64.zip \
-            artifacts/linux/paqetN#paqetN-${VERSION}-linux-amd64 \
+            artifacts/linux/paqetN-${VERSION}-linux-amd64.zip \
             artifacts/linux/paqetn_${VERSION}_amd64.deb \
             artifacts/macos/paqetN-macos-arm64.zip#paqetN-${VERSION}-macos-arm64.zip
