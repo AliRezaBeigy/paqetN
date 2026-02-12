@@ -27,8 +27,14 @@ public:
     // Get list of all network adapters
     QList<NetworkAdapterInfo> detectAdapters();
 
+    // Get list of acceptable adapters (filtered: non-virtual, non-loopback, with real IP)
+    QList<NetworkAdapterInfo> getAcceptableAdapters();
+
     // Get the primary/default network adapter
     NetworkAdapterInfo getDefaultAdapter();
+    
+    // Get adapter by GUID (Windows) or interface name (Unix)
+    NetworkAdapterInfo getAdapterByGuid(const QString &guid);
 
     // Get gateway MAC address for a given gateway IP
     QString getGatewayMac(const QString &gatewayIp);

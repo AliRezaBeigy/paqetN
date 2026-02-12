@@ -10,6 +10,7 @@ FluPage {
 
     Component.onCompleted: {
         socksPortField.text = String(paqetController.getSocksPort())
+        allowLocalLanCheck.checked = paqetController.getAllowLocalLan()
         connectionCheckUrlField.text = paqetController.getConnectionCheckUrl()
         timeoutField.text = String(paqetController.getConnectionCheckTimeoutSeconds())
         showLatencyCheck.checked = paqetController.getShowLatencyInUi()
@@ -175,6 +176,15 @@ FluPage {
                             text: "1284"
                             validator: IntValidator { bottom: 1; top: 65535 }
                             onEditingFinished: paqetController.setSocksPort(parseInt(text) || 1284)
+                        }
+
+                        FluText { text: qsTr("Allow Local LAN"); font: FluTextStyle.Body }
+                        FluCheckBox {
+                            id: allowLocalLanCheck
+                            checked: false
+                            onClicked: paqetController.setAllowLocalLan(checked)
+                            ToolTip.visible: hovered
+                            ToolTip.text: qsTr("Bind to 0.0.0.0 instead of 127.0.0.1 to allow connections from other devices on your local network")
                         }
 
                         FluText { text: qsTr("Connection check URL"); font: FluTextStyle.Body }

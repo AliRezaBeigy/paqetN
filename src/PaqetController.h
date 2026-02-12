@@ -6,9 +6,11 @@
 #include <QObject>
 #include <QVariantList>
 #include <QVariantMap>
+#include <QStringList>
 #include <functional>
 
 class LogBuffer;
+class QTimer;
 class PaqetRunner;
 class LatencyChecker;
 class UpdateManager;
@@ -140,6 +142,15 @@ public:
     // Network detection
     Q_INVOKABLE QVariantList detectNetworkAdapters();
     Q_INVOKABLE QVariantMap getDefaultNetworkAdapter();
+    Q_INVOKABLE QVariantList getAcceptableNetworkAdapters();
+    Q_INVOKABLE QString getSelectedNetworkInterface() const;
+    Q_INVOKABLE void setSelectedNetworkInterface(const QString &guid);
+    Q_INVOKABLE void startNetworkMonitoring();
+    Q_INVOKABLE void stopNetworkMonitoring();
+
+    // Allow local LAN access (bind to 0.0.0.0 instead of 127.0.0.1)
+    Q_INVOKABLE bool getAllowLocalLan() const;
+    Q_INVOKABLE void setAllowLocalLan(bool enabled);
 
 signals:
     void selectedConfigIdChanged();
@@ -168,6 +179,7 @@ signals:
     void systemProxyEnabledChanged();
     void tunAssetsDownloadInProgressChanged();
     void tunAssetsDownloadProgressChanged();
+    void networkAdaptersChanged();
 
 private slots:
     void onPaqetUpdateCheckFinished(bool available, const QString &version, const QString &url);
@@ -207,4 +219,9 @@ private:
     bool m_autoDownloadMode = false; // Track if current check is for auto-download
     bool m_tunAssetsDownloadInProgress = false;
     int m_tunAssetsDownloadProgress = 0;
+    
+    // Network monitoring
+    QTimer *m_networkMonitorTimer = nullptr;
+    QStringList m_lastAdapterGuids;  // Cache of adapter GUIDs to detect changes
+    void checkNetworkChanges();
 };

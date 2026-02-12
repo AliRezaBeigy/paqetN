@@ -169,6 +169,9 @@ void PaqetController::cleanup() {
     if (cleanedUp) return;
     cleanedUp = true;
 
+    // Stop network monitoring
+    stopNetworkMonitoring();
+
     if (m_logBuffer)
         m_logBuffer->append(QStringLiteral("[PaqetN] Application closing, cleaning up..."));
 
@@ -262,7 +265,9 @@ QVariantList PaqetController::getGroups() {
 QVariantMap PaqetController::getConfigForEdit(const QString &id) {
     if (id.isEmpty()) {
         PaqetConfig c;
-        c.socksListen = QStringLiteral("127.0.0.1:%1").arg(m_settings->socksPort());
+        // socksListen is now determined by settings (port + allowLocalLan), not stored per-config
+        QString bindAddr = m_settings->allowLocalLan() ? QStringLiteral("0.0.0.0") : QStringLiteral("127.0.0.1");
+        c.socksListen = QStringLiteral("%1:%2").arg(bindAddr).arg(m_settings->socksPort());
         // Network settings are auto-detected at connect time, not stored in config
         return c.toVariantMap();
     }
@@ -299,8 +304,9 @@ bool PaqetController::addConfigFromImport(const QString &text) {
     auto opt = PaqetConfig::parseFromImport(text);
     if (!opt) return false;
     PaqetConfig c = *opt;
-    if (c.socksListen.isEmpty() || c.socksListen == QLatin1String("127.0.0.1:1284"))
-        c.socksListen = QStringLiteral("127.0.0.1:%1").arg(m_settings->socksPort());
+    // socksListen is now determined by settings (port + allowLocalLan), not stored per-config
+    QString bindAddr = m_settings->allowLocalLan() ? QStringLiteral("0.0.0.0") : QStringLiteral("127.0.0.1");
+    c.socksListen = QStringLiteral("%1:%2").arg(bindAddr).arg(m_settings->socksPort());
     QString newId = m_repo->add(c);
     if (!newId.isEmpty()) setSelectedConfigId(newId);
     return true;
@@ -322,7 +328,24 @@ void PaqetController::connectToSelected() {
     }
 
     m_logBuffer->append(tr("[PaqetN] Attempting to connect to: %1").arg(c.name.isEmpty() ? c.serverAddr : c.name));
-    m_logBuffer->append(tr("[PaqetN] Auto-detecting network adapter..."));
+    
+    // Check if user has a preferred network interface selected
+    QString selectedGuid = m_settings->selectedNetworkInterface();
+    if (!selectedGuid.isEmpty()) {
+        m_logBuffer->append(tr("[PaqetN] Using user-selected network adapter..."));
+    } else {
+        m_logBuffer->append(tr("[PaqetN] Auto-detecting network adapter..."));
+    }
+
+    // Use port from settings and determine bind address based on allowLocalLan
+    int socksPort = m_settings->socksPort();
+    bool allowLocalLan = m_settings->allowLocalLan();
+    QString bindAddr = allowLocalLan ? QStringLiteral("0.0.0.0") : QStringLiteral("127.0.0.1");
+    c.socksListen = QStringLiteral("%1:%2").arg(bindAddr).arg(socksPort);
+    
+    if (allowLocalLan) {
+        m_logBuffer->append(tr("[PaqetN] Allow Local LAN enabled, binding to 0.0.0.0:%1").arg(socksPort));
+    }
 
     // Run network detection off the UI thread to avoid freezing (PowerShell/ipconfig can take seconds)
     QString logLevel = m_settings->logLevel();
@@ -429,10 +452,13 @@ void PaqetController::connectToSelected() {
         m_runner->start(c, m_settings->logLevel());
     });
 
-    QFuture<NetworkAdapterInfo> future = QtConcurrent::run([logLevel]() {
+    QFuture<NetworkAdapterInfo> future = QtConcurrent::run([logLevel, selectedGuid]() {
         NetworkInfoDetector detector;
         detector.setLogBuffer(nullptr);  // Do not log from worker thread (LogBuffer not thread-safe)
         detector.setLogLevel(logLevel);
+        if (!selectedGuid.isEmpty()) {
+            return detector.getAdapterByGuid(selectedGuid);
+        }
         return detector.getDefaultAdapter();
     });
     watcher->setFuture(future);
@@ -531,7 +557,18 @@ bool PaqetController::writeFile(const QString &path, const QString &content) con
 QString PaqetController::getTheme() const { return m_settings->theme(); }
 void PaqetController::setTheme(const QString &theme) { m_settings->setTheme(theme); }
 int PaqetController::getSocksPort() const { return m_settings->socksPort(); }
-void PaqetController::setSocksPort(int port) { m_settings->setSocksPort(port); }
+void PaqetController::setSocksPort(int port) {
+    int currentPort = m_settings->socksPort();
+    if (currentPort == port) return;  // No change
+
+    m_settings->setSocksPort(port);
+
+    // Restart paqet if running to apply new port
+    if (isRunning()) {
+        m_logBuffer->append(tr("[PaqetN] SOCKS port changed, restarting..."));
+        restart();
+    }
+}
 QString PaqetController::getConnectionCheckUrl() const { return m_settings->connectionCheckUrl(); }
 void PaqetController::setConnectionCheckUrl(const QString &url) { m_settings->setConnectionCheckUrl(url); }
 int PaqetController::getConnectionCheckTimeoutSeconds() const { return m_settings->connectionCheckTimeoutSeconds(); }
@@ -664,6 +701,12 @@ void PaqetController::onPaqetDownloadFinished(const QString &path) {
     // Update runner's binary path
     if (m_runner) {
         m_runner->setPaqetBinaryPath(path);
+    }
+
+    // Auto-start connection if a profile is selected but not running
+    if (!isRunning() && !m_selectedConfigId.isEmpty()) {
+        m_logBuffer->append(tr("[PaqetN] Profile selected, starting connection..."));
+        connectToSelected();
     }
 }
 
@@ -803,6 +846,90 @@ QVariantMap PaqetController::getDefaultNetworkAdapter() {
     map.insert(QStringLiteral("isActive"), adapter.isActive);
 
     return map;
+}
+
+QVariantList PaqetController::getAcceptableNetworkAdapters() {
+    NetworkInfoDetector detector;
+    auto adapters = detector.getAcceptableAdapters();
+
+    QVariantList result;
+    for (const auto &adapter : adapters) {
+        QVariantMap map;
+        map.insert(QStringLiteral("name"), adapter.name);
+        map.insert(QStringLiteral("guid"), adapter.guid);
+        map.insert(QStringLiteral("interfaceName"), adapter.interfaceName);
+        map.insert(QStringLiteral("ipv4Address"), adapter.ipv4Address);
+        map.insert(QStringLiteral("gatewayIp"), adapter.gatewayIp);
+        map.insert(QStringLiteral("gatewayMac"), adapter.gatewayMac);
+        map.insert(QStringLiteral("isActive"), adapter.isActive);
+        result.append(map);
+    }
+
+    return result;
+}
+
+QString PaqetController::getSelectedNetworkInterface() const {
+    return m_settings->selectedNetworkInterface();
+}
+
+void PaqetController::setSelectedNetworkInterface(const QString &guid) {
+    m_settings->setSelectedNetworkInterface(guid);
+}
+
+bool PaqetController::getAllowLocalLan() const {
+    return m_settings->allowLocalLan();
+}
+
+void PaqetController::setAllowLocalLan(bool enabled) {
+    m_settings->setAllowLocalLan(enabled);
+}
+
+void PaqetController::startNetworkMonitoring() {
+    if (!m_networkMonitorTimer) {
+        m_networkMonitorTimer = new QTimer(this);
+        m_networkMonitorTimer->setInterval(5000);  // Check every 5 seconds
+        connect(m_networkMonitorTimer, &QTimer::timeout, this, &PaqetController::checkNetworkChanges);
+    }
+    
+    // Initialize the cached adapter list
+    auto adapters = getAcceptableNetworkAdapters();
+    m_lastAdapterGuids.clear();
+    for (const auto &adapter : adapters) {
+        m_lastAdapterGuids.append(adapter.toMap().value(QStringLiteral("guid")).toString());
+    }
+    
+    m_networkMonitorTimer->start();
+}
+
+void PaqetController::stopNetworkMonitoring() {
+    if (m_networkMonitorTimer) {
+        m_networkMonitorTimer->stop();
+    }
+}
+
+void PaqetController::checkNetworkChanges() {
+    // Get current adapters
+    auto adapters = getAcceptableNetworkAdapters();
+    QStringList currentGuids;
+    for (const auto &adapter : adapters) {
+        currentGuids.append(adapter.toMap().value(QStringLiteral("guid")).toString());
+    }
+    
+    // Check if list has changed (different count or different GUIDs)
+    bool changed = (currentGuids.size() != m_lastAdapterGuids.size());
+    if (!changed) {
+        for (const QString &guid : currentGuids) {
+            if (!m_lastAdapterGuids.contains(guid)) {
+                changed = true;
+                break;
+            }
+        }
+    }
+    
+    if (changed) {
+        m_lastAdapterGuids = currentGuids;
+        emit networkAdaptersChanged();
+    }
 }
 
 bool PaqetController::isRunningAsAdmin() const

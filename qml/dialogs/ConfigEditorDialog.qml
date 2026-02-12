@@ -86,7 +86,7 @@ FluPopup {
             var bi = kcpBlockOptions.indexOf(config.kcpBlock)
             kcpBlockCombo.currentIndex = bi >= 0 ? bi : 0
         } else kcpBlockCombo.currentIndex = 0
-        if (config.socksListen !== undefined) socksListenField.text = config.socksListen; else socksListenField.text = "127.0.0.1:1284"
+        // socksListen is now controlled by settings (port + allowLocalLan), not per-config
         if (config.conn !== undefined) connField.text = String(config.conn); else connField.text = "1"
         if (config.kcpMode !== undefined) {
             var mi = kcpModeOptions.indexOf(config.kcpMode)
@@ -109,7 +109,7 @@ FluPopup {
         c.serverAddr = serverAddrField.text
         c.kcpKey = kcpKeyField.text
         c.kcpBlock = (kcpBlockCombo.currentIndex >= 0 ? kcpBlockOptions[kcpBlockCombo.currentIndex] : "aes")
-        c.socksListen = socksListenField.text
+        // socksListen is now controlled by settings (port + allowLocalLan), not per-config
         c.conn = parseInt(connField.text) || 1
         c.kcpMode = (kcpModeCombo.currentIndex >= 0 ? kcpModeOptions[kcpModeCombo.currentIndex] : "fast")
         c.mtu = parseInt(mtuField.text) || 1350
@@ -228,8 +228,6 @@ FluPopup {
                     columnSpacing: 12
                     Layout.fillWidth: true
 
-                    FluText { text: qsTr("SOCKS listen"); font: FluTextStyle.Body }
-                    FluTextBox { id: socksListenField; Layout.fillWidth: true; placeholderText: "127.0.0.1:1284" }
                     FluText { text: qsTr("Connections"); font: FluTextStyle.Body }
                     FluTextBox { id: connField; Layout.fillWidth: true; placeholderText: "1"; validator: IntValidator { bottom: 1; top: 256 } }
                     FluText { text: qsTr("Local TCP flags"); font: FluTextStyle.Body }

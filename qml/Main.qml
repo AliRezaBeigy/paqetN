@@ -109,6 +109,8 @@ FluWindow {
 
     property string activeGroupFilter: ""
     property var groupsModel: []
+    property var networkAdapters: []
+    property string selectedNetworkInterface: ""
 
     readonly property var accentPalette: ["#5BA3F5", "#3DD68C", "#FFC947", "#FF6B6B", "#B794F6", "#F882D1", "#36D9EE", "#FF9A56"]
     readonly property color successColor: FluTheme.dark ? "#3DD68C" : "#22c55e"
@@ -126,10 +128,37 @@ FluWindow {
         else if (t === "light") FluTheme.darkMode = FluThemeType.Light
         else FluTheme.darkMode = FluThemeType.System
         groupsModel = paqetController.getGroups()
+        
+        // Load network adapters and selected interface
+        refreshNetworkAdapters()
+        
+        // Start monitoring for network changes
+        paqetController.startNetworkMonitoring()
 
         // Auto hide on startup (only when start on boot is enabled)
         if (paqetController.getStartOnBoot() && paqetController.getAutoHideOnStartup()) {
             window.hide()
+        }
+    }
+    
+    function refreshNetworkAdapters() {
+        networkAdapters = paqetController.getAcceptableNetworkAdapters()
+        selectedNetworkInterface = paqetController.getSelectedNetworkInterface()
+        
+        // Validate that the selected interface still exists
+        if (selectedNetworkInterface) {
+            var found = false
+            for (var i = 0; i < networkAdapters.length; i++) {
+                if (networkAdapters[i].guid === selectedNetworkInterface) {
+                    found = true
+                    break
+                }
+            }
+            // If selected interface no longer exists, reset to Auto
+            if (!found) {
+                selectedNetworkInterface = ""
+                paqetController.setSelectedNetworkInterface("")
+            }
         }
     }
 
@@ -137,6 +166,9 @@ FluWindow {
         target: paqetController
         function onConfigsChanged() {
             groupsModel = paqetController.getGroups()
+        }
+        function onNetworkAdaptersChanged() {
+            refreshNetworkAdapters()
         }
     }
 
@@ -220,7 +252,7 @@ FluWindow {
                 }
             }
 
-            // Center: download progress text when active
+            // Center: download progress text when active, or interface selector
             Item { Layout.fillWidth: true }
             FluText {
                 visible: bottomBar.downloadInProgress
@@ -228,6 +260,45 @@ FluWindow {
                 font: FluTextStyle.Body
                 color: FluTheme.primaryColor
             }
+            
+            // Network interface selector (only show if more than one adapter)
+            FluComboBox {
+                id: interfaceCombo
+                visible: !bottomBar.downloadInProgress && window.networkAdapters.length > 1
+                Layout.preferredWidth: 180
+                property var adapterGuids: {
+                    var guids = [""]  // First item is "Auto" with empty guid
+                    for (var i = 0; i < window.networkAdapters.length; i++) {
+                        guids.push(window.networkAdapters[i].guid)
+                    }
+                    return guids
+                }
+                model: {
+                    var names = [qsTr("Auto")]
+                    for (var i = 0; i < window.networkAdapters.length; i++) {
+                        var adapter = window.networkAdapters[i]
+                        // Show name with IP for clarity
+                        var ip = adapter.ipv4Address.replace(":0", "")
+                        names.push(adapter.name + " (" + ip + ")")
+                    }
+                    return names
+                }
+                currentIndex: {
+                    if (!window.selectedNetworkInterface) return 0
+                    for (var i = 0; i < window.networkAdapters.length; i++) {
+                        if (window.networkAdapters[i].guid === window.selectedNetworkInterface) {
+                            return i + 1  // +1 because first item is "Auto"
+                        }
+                    }
+                    return 0
+                }
+                onActivated: function(index) {
+                    var guid = adapterGuids[index] || ""
+                    window.selectedNetworkInterface = guid
+                    paqetController.setSelectedNetworkInterface(guid)
+                }
+            }
+            
             Item { Layout.fillWidth: true }
 
             FluComboBox {

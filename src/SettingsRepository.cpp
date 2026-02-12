@@ -180,3 +180,23 @@ void SettingsRepository::setCloseToTray(bool enabled) {
     settings()->setValue(QStringLiteral("closeToTray"), enabled);
     emit closeToTrayChanged();
 }
+
+bool SettingsRepository::allowLocalLan() const {
+    return settings()->value(QStringLiteral("allowLocalLan"), false).toBool();
+}
+
+void SettingsRepository::setAllowLocalLan(bool enabled) {
+    if (allowLocalLan() == enabled) return;
+    settings()->setValue(QStringLiteral("allowLocalLan"), enabled);
+    emit allowLocalLanChanged();
+}
+
+QString SettingsRepository::selectedNetworkInterface() const {
+    return settings()->value(QStringLiteral("selectedNetworkInterface")).toString();
+}
+
+void SettingsRepository::setSelectedNetworkInterface(const QString &guid) {
+    if (selectedNetworkInterface() == guid) return;
+    settings()->setValue(QStringLiteral("selectedNetworkInterface"), guid);
+    emit selectedNetworkInterfaceChanged();
+}

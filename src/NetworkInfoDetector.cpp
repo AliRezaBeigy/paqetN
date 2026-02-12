@@ -77,9 +77,9 @@ static bool isRealNetworkIP(const QString &ipAddress)
     return true;
 }
 
-NetworkAdapterInfo NetworkInfoDetector::getDefaultAdapter()
+QList<NetworkAdapterInfo> NetworkInfoDetector::getAcceptableAdapters()
 {
-    log(QStringLiteral("Getting default adapter..."));
+    log(QStringLiteral("Getting acceptable adapters..."));
     auto adapters = detectAdapters();
 
     // Filter out loopback adapters and APIPA addresses
@@ -114,6 +114,32 @@ NetworkAdapterInfo NetworkInfoDetector::getDefaultAdapter()
         
         candidates.append(adapter);
     }
+    
+    return candidates;
+}
+
+NetworkAdapterInfo NetworkInfoDetector::getAdapterByGuid(const QString &guid)
+{
+    if (guid.isEmpty()) {
+        return getDefaultAdapter();
+    }
+    
+    auto adapters = getAcceptableAdapters();
+    for (const auto &adapter : adapters) {
+        if (adapter.guid == guid) {
+            return adapter;
+        }
+    }
+    
+    // Fallback to default if not found
+    log(QStringLiteral("Adapter with GUID '%1' not found, falling back to default").arg(guid));
+    return getDefaultAdapter();
+}
+
+NetworkAdapterInfo NetworkInfoDetector::getDefaultAdapter()
+{
+    log(QStringLiteral("Getting default adapter..."));
+    QList<NetworkAdapterInfo> candidates = getAcceptableAdapters();
 
     // Priority 1: Adapter with real IP + gateway + MAC (best - has full network config)
     // Gateway presence is more important than PowerShell's "active" status

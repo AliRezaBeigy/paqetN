@@ -56,6 +56,12 @@ public:
     bool closeToTray() const;
     void setCloseToTray(bool enabled);
 
+    bool allowLocalLan() const;
+    void setAllowLocalLan(bool enabled);
+
+    QString selectedNetworkInterface() const;  // GUID of selected interface
+    void setSelectedNetworkInterface(const QString &guid);
+
     static const QStringList &logLevels();
     static const QStringList &proxyModes();
     static constexpr int defaultSocksPort = 1284;
@@ -80,6 +86,8 @@ signals:
     void startOnBootChanged();
     void autoHideOnStartupChanged();
     void closeToTrayChanged();
+    void allowLocalLanChanged();
+    void selectedNetworkInterfaceChanged();
 
 private:
     QSettings *settings() const;
