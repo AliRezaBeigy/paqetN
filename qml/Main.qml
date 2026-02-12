@@ -200,6 +200,25 @@ FluWindow {
         }
     }
 
+    FluContentDialog {
+        id: downloadPaqetPromptDialog
+        title: qsTr("Paqet binary not found")
+        message: qsTr("The paqet binary was not found on your system. Would you like to download it now?")
+        buttonFlags: FluContentDialogType.NegativeButton | FluContentDialogType.PositiveButton
+        negativeText: qsTr("Later")
+        positiveText: qsTr("Download")
+        onPositiveClicked: {
+            paqetController.autoDownloadPaqetIfMissing()
+        }
+    }
+
+    Connections {
+        target: paqetController
+        function onPaqetBinaryMissingPrompt() {
+            downloadPaqetPromptDialog.open()
+        }
+    }
+
     // ── Helper functions ──
 
     function openConfigEditor(id) {

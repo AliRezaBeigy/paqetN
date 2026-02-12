@@ -93,12 +93,11 @@ PaqetController::PaqetController(QObject *parent) : QObject(parent) {
     m_selectedConfigId = m_repo->lastSelectedId();
     reloadConfigList();
 
-    // Auto-download paqet if missing
+    // Prompt user to download paqet if missing
     QTimer::singleShot(500, this, [this] {
         if (m_settings->autoDownloadPaqet()) {
             if (!m_updateManager->isPaqetBinaryAvailable(m_settings->paqetBinaryPath())) {
-                m_logBuffer->append(tr("[PaqetN] Paqet binary not found, attempting auto-download..."));
-                autoDownloadPaqetIfMissing();
+                emit paqetBinaryMissingPrompt();
             }
         }
     });

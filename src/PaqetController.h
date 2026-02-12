@@ -123,6 +123,7 @@ signals:
     void paqetDownloadComplete(const QString &path);
     void paqetnDownloadComplete();
     void paqetBinaryMissing();
+    void paqetBinaryMissingPrompt();
 
 private slots:
     void onPaqetUpdateCheckFinished(bool available, const QString &version, const QString &url);
