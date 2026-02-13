@@ -531,6 +531,36 @@ QList<NetworkAdapterInfo> NetworkInfoDetector::detectAdaptersWindows()
         }
     }
 
+    // Step 4: Fallback for adapters with IP but no gateway (e.g. Wi-Fi when ipconfig matching failed or from QNetworkInterface)
+    for (auto &adapter : result) {
+        if (adapter.ipv4Address.isEmpty() || !adapter.gatewayIp.isEmpty())
+            continue;
+        if (!isRealNetworkIP(adapter.ipv4Address))
+            continue;
+        QProcess routeProc;
+        routeProc.start(QStringLiteral("cmd"), {QStringLiteral("/c"), QStringLiteral("route print 0.0.0.0")});
+        if (!routeProc.waitForFinished(5000))
+            continue;
+        QString output = QString::fromLocal8Bit(routeProc.readAllStandardOutput());
+        QString defaultGateway;
+        for (const QString &line : output.split(QLatin1Char('\n'))) {
+            QString trimmed = line.trimmed();
+            if (trimmed.startsWith(QLatin1String("0.0.0.0"))) {
+                QStringList parts = trimmed.split(QRegularExpression(QStringLiteral("\\s+")), Qt::SkipEmptyParts);
+                if (parts.size() >= 3) {
+                    defaultGateway = parts[2];
+                    break;
+                }
+            }
+        }
+        if (!defaultGateway.isEmpty()) {
+            adapter.gatewayIp = defaultGateway;
+            adapter.gatewayMac = getGatewayMacWindows(defaultGateway);
+            log(QStringLiteral("  Fallback gateway for '%1': %2, MAC=%3")
+                .arg(adapter.name, adapter.gatewayIp, adapter.gatewayMac));
+        }
+    }
+
     log(QStringLiteral("Final adapter list (%1 adapters):").arg(result.size()));
     for (int i = 0; i < result.size(); ++i) {
         const auto &adapter = result[i];
@@ -553,14 +583,20 @@ QString NetworkInfoDetector::getGatewayMacWindows(const QString &gatewayIp)
         return QString();
     }
 
+    // Populate ARP cache so "arp -a" can resolve the gateway MAC (cache is often empty otherwise)
+    QProcess pingProc;
+    pingProc.start(QStringLiteral("ping"), QStringList() << QStringLiteral("-n") << QStringLiteral("1") << gatewayIp);
+    pingProc.waitForFinished(2000);
+
     QProcess process;
     process.start(QStringLiteral("arp"), QStringList() << QStringLiteral("-a") << gatewayIp);
 
-    if (!process.waitForFinished(3000)) {
+    bool waitOk = process.waitForFinished(3000);
+    QString output = QString::fromUtf8(process.readAllStandardOutput());
+
+    if (!waitOk) {
         return QString();
     }
-
-    QString output = QString::fromUtf8(process.readAllStandardOutput());
 
     // Parse ARP output: "  192.168.1.1           aa-bb-cc-dd-ee-ff     dynamic"
     QRegularExpression macRe(QStringLiteral("([0-9a-fA-F]{2}[:-]){5}[0-9a-fA-F]{2}"));
