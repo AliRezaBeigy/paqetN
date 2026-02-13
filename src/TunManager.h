@@ -2,6 +2,7 @@
 
 #include <QObject>
 #include <QProcess>
+#include <QTimer>
 
 class LogBuffer;
 
@@ -31,10 +32,17 @@ private:
     void onProcessError(QProcess::ProcessError error);
     void onProcessFinished(int exitCode, QProcess::ExitStatus exitStatus);
 
+    void onServerRouteReady();
+    void onProcessStartedForAsync();
+    void onInterfacePoll();
+    void onInterfaceTimeout();
+    void onTunInterfaceReady();
+
     QString generateConfig(int socksPort);
     bool setupServerRoute(const QString &serverAddr);
     bool setupTunRoutes();
     void cleanupRoutes();
+    void cancelAsyncStart();
 
 #ifdef Q_OS_WIN
     int getTunInterfaceIndex() const;
@@ -42,6 +50,9 @@ private:
 #endif
 
     LogBuffer *m_logBuffer = nullptr;
+    QTimer *m_interfacePollTimer = nullptr;
+    QTimer *m_interfaceTimeoutTimer = nullptr;
+    bool m_asyncStartInProgress = false;
     QProcess *m_process = nullptr;
     QString m_customBinaryPath;
     QString m_configPath;

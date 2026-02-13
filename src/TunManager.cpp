@@ -5,10 +5,13 @@
 #include <QCoreApplication>
 #include <QDir>
 #include <QFileInfo>
+#include <QFutureWatcher>
+#include <QMetaObject>
 #include <QRegularExpression>
 #include <QStandardPaths>
 #include <QTimer>
 #include <QThread>
+#include <QtConcurrent>
 
 #ifdef Q_OS_WIN
 #include <winsock2.h>
@@ -159,6 +162,7 @@ QString TunManager::generateConfig(int socksPort) {
 
 bool TunManager::start(int socksPort, const QString &serverAddr) {
     if (m_logBuffer) m_logBuffer->append(QStringLiteral("[TUN] Stopping any existing TUN process..."));
+    cancelAsyncStart();
     stop();
 
     m_serverAddr = serverAddr;
@@ -197,13 +201,7 @@ bool TunManager::start(int socksPort, const QString &serverAddr) {
         return false;
     }
 
-    // First, add route for server IP via original gateway (before TUN is up)
-    // This ensures we don't lose connection to the server when TUN takes over routing
-    if (!setupServerRoute(serverAddr)) {
-        if (m_logBuffer) m_logBuffer->append(QStringLiteral("[TUN] WARNING: Server route setup had issues"));
-    }
-
-    // Launch process; ensure hev is killed when PaqetN exits (including on crash)
+    // Set process command; we start it after server route is ready
     m_process->setWorkingDirectory(dir);
     m_process->setProgram(binary);
     m_process->setArguments({m_configPath});
@@ -213,18 +211,53 @@ bool TunManager::start(int socksPort, const QString &serverAddr) {
         m_process->setChildProcessModifier(unixModifier);
 #endif
 
-    if (m_logBuffer) m_logBuffer->append(QStringLiteral("[TUN] Starting: ") + binary + QLatin1Char(' ') + m_configPath);
+    // Run server route setup in background so UI stays responsive
+    m_asyncStartInProgress = true;
+    QFutureWatcher<bool> *watcher = new QFutureWatcher<bool>(this);
+    connect(watcher, &QFutureWatcher<bool>::finished, this, [this, watcher]() {
+        watcher->deleteLater();
+        if (!m_asyncStartInProgress) return;
+        bool ok = watcher->result();
+        if (!ok && m_logBuffer)
+            m_logBuffer->append(QStringLiteral("[TUN] WARNING: Server route setup had issues"));
+        onServerRouteReady();
+    });
+    watcher->setFuture(QtConcurrent::run([this, serverAddr]() { return setupServerRoute(serverAddr); }));
+
+    if (m_logBuffer) m_logBuffer->append(QStringLiteral("[TUN] Starting (server route in progress)..."));
+    return true;
+}
+
+void TunManager::onServerRouteReady() {
+    if (!m_asyncStartInProgress || !m_process) return;
+    if (m_process->state() != QProcess::NotRunning) return;
+
+    if (m_logBuffer) m_logBuffer->append(QStringLiteral("[TUN] Starting: ") + m_process->program() + QLatin1Char(' ') + m_configPath);
     m_process->start(QProcess::ReadOnly);
 
-    const bool ok = m_process->waitForStarted(5000);
-    if (!ok) {
+    // One-shot: when process has started we continue async setup
+    QMetaObject::Connection *conn = new QMetaObject::Connection;
+    *conn = connect(m_process, &QProcess::stateChanged, this, [this, conn](QProcess::ProcessState state) {
+        if (state != QProcess::Running) return;
+        QObject::disconnect(*conn);
+        delete conn;
+        onProcessStartedForAsync();
+    });
+    connect(m_process, &QProcess::errorOccurred, this, [this, conn](QProcess::ProcessError err) {
+        if (err != QProcess::FailedToStart) return;
+        QObject::disconnect(*conn);
+        delete conn;
+        m_asyncStartInProgress = false;
         if (m_logBuffer) {
             m_logBuffer->append(QStringLiteral("[TUN] ERROR: Failed to start process"));
             m_logBuffer->append(QStringLiteral("[TUN] Error: ") + m_process->errorString());
         }
         cleanupRoutes();
-        return false;
-    }
+    });
+}
+
+void TunManager::onProcessStartedForAsync() {
+    if (!m_asyncStartInProgress) return;
 
     if (m_logBuffer)
         m_logBuffer->append(QStringLiteral("[TUN] Process started (PID: %1)").arg(m_process->processId()));
@@ -237,38 +270,76 @@ bool TunManager::start(int socksPort, const QString &serverAddr) {
 #endif
 
 #ifdef Q_OS_WIN
-    // Wait for TUN interface to be created by hev-socks5-tunnel
     if (m_logBuffer) m_logBuffer->append(QStringLiteral("[TUN] Waiting for TUN interface to be created..."));
-    if (!waitForTunInterface(10000)) {
-        if (m_logBuffer) m_logBuffer->append(QStringLiteral("[TUN] ERROR: TUN interface was not created"));
-        stop();
-        return false;
+    if (!m_interfacePollTimer) {
+        m_interfacePollTimer = new QTimer(this);
+        m_interfacePollTimer->setSingleShot(false);
+        connect(m_interfacePollTimer, &QTimer::timeout, this, &TunManager::onInterfacePoll);
     }
-    
-    // Give hev-socks5-tunnel additional time to fully configure the interface
-    // (assign IP address, set up internal state, etc.)
+    m_interfacePollTimer->start(200);
+
+    if (!m_interfaceTimeoutTimer) {
+        m_interfaceTimeoutTimer = new QTimer(this);
+        m_interfaceTimeoutTimer->setSingleShot(true);
+        connect(m_interfaceTimeoutTimer, &QTimer::timeout, this, &TunManager::onInterfaceTimeout);
+    }
+    m_interfaceTimeoutTimer->start(10000);
+#else
+    QTimer::singleShot(500, this, &TunManager::onTunInterfaceReady);
+#endif
+}
+
+void TunManager::onInterfacePoll() {
+    if (!m_asyncStartInProgress || m_process->state() != QProcess::Running) return;
+    int idx = getTunInterfaceIndex();
+    if (idx <= 0) return;
+
+    // Stop polling/timeout only; keep m_asyncStartInProgress so onTunInterfaceReady runs
+    if (m_interfacePollTimer) m_interfacePollTimer->stop();
+    if (m_interfaceTimeoutTimer) m_interfaceTimeoutTimer->stop();
+    m_tunInterfaceIndex = idx;
+    if (m_logBuffer)
+        m_logBuffer->append(QStringLiteral("[TUN] Interface detected, index: %1").arg(idx));
     if (m_logBuffer) m_logBuffer->append(QStringLiteral("[TUN] Waiting for interface initialization to complete..."));
-    QThread::msleep(3000);
-    
-    // Check if process is still running
+    QTimer::singleShot(3000, this, &TunManager::onTunInterfaceReady);
+}
+
+void TunManager::onInterfaceTimeout() {
+    if (!m_asyncStartInProgress) return;
+    cancelAsyncStart();
+    if (m_logBuffer) m_logBuffer->append(QStringLiteral("[TUN] ERROR: TUN interface was not created within timeout"));
+    stop();
+}
+
+void TunManager::onTunInterfaceReady() {
+    if (!m_asyncStartInProgress) return;
     if (m_process->state() != QProcess::Running) {
         if (m_logBuffer) m_logBuffer->append(QStringLiteral("[TUN] ERROR: hev-socks5-tunnel process died during initialization"));
-        return false;
-    }
-#else
-    // Give Linux/macOS a moment to create the interface
-    QThread::msleep(500);
-#endif
-
-    // Now setup the TUN routes (after interface is ready)
-    if (!setupTunRoutes()) {
-        if (m_logBuffer) m_logBuffer->append(QStringLiteral("[TUN] WARNING: TUN route setup had issues"));
+        m_asyncStartInProgress = false;
+        return;
     }
 
-    return true;
+    // Run route setup in background so UI stays responsive
+    QFutureWatcher<bool> *watcher = new QFutureWatcher<bool>(this);
+    connect(watcher, &QFutureWatcher<bool>::finished, this, [this, watcher]() {
+        watcher->deleteLater();
+        m_asyncStartInProgress = false;
+        if (!m_process || m_process->state() != QProcess::Running) return;
+        if (!watcher->result() && m_logBuffer)
+            m_logBuffer->append(QStringLiteral("[TUN] WARNING: TUN route setup had issues"));
+        emit runningChanged();
+    });
+    watcher->setFuture(QtConcurrent::run([this]() { return setupTunRoutes(); }));
+}
+
+void TunManager::cancelAsyncStart() {
+    m_asyncStartInProgress = false;
+    if (m_interfacePollTimer) m_interfacePollTimer->stop();
+    if (m_interfaceTimeoutTimer) m_interfaceTimeoutTimer->stop();
 }
 
 void TunManager::stop() {
+    cancelAsyncStart();
     if (!m_process || m_process->state() == QProcess::NotRunning) {
         cleanupRoutes();
         if (m_logBuffer) m_logBuffer->append(QStringLiteral("[TUN] Stopped"));
