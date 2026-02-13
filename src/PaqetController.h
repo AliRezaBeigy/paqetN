@@ -2,6 +2,7 @@
 
 #include "ConfigListModel.h"
 #include "ConfigRepository.h"
+#include "NetworkInfoDetector.h"
 #include "SettingsRepository.h"
 #include <QObject>
 #include <QVariantList>
@@ -238,6 +239,9 @@ private:
     bool m_paqetUpdateCheckInProgress = false;
     bool m_downloadFailed = false;
     QString m_downloadFailedMessage;
+
+    // Single in-flight connect (network detection); replaced/cancelled when connectToSelected() is called again
+    QFutureWatcher<NetworkAdapterInfo> *m_connectWatcher = nullptr;
 
     // Network monitoring (detection runs in background to avoid UI lag)
     QTimer *m_networkMonitorTimer = nullptr;

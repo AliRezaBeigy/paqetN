@@ -20,6 +20,7 @@
 #include <QDir>
 #include <QSettings>
 #include <QDateTime>
+#include <QPointer>
 
 #ifdef Q_OS_WIN
 #include <windows.h>
@@ -379,17 +380,29 @@ void PaqetController::connectToSelected() {
     }
 
     // Run network detection off the UI thread to avoid freezing (PowerShell/ipconfig can take seconds)
+    // Cancel any in-flight connect so only one network detection runs (avoids double start + use-after-free in deferred deleteLater)
+    if (m_connectWatcher) {
+        m_connectWatcher->disconnect();
+        m_connectWatcher->deleteLater();
+        m_connectWatcher = nullptr;
+    }
+
     QString logLevel = m_settings->logLevel();
     QFutureWatcher<NetworkAdapterInfo> *watcher = new QFutureWatcher<NetworkAdapterInfo>(this);
+    m_connectWatcher = watcher;
     connect(watcher, &QFutureWatcher<NetworkAdapterInfo>::finished, this, [this, watcher, c]() mutable {
         qDebug() << "[PaqetController] Network future finished: slot entered";
         NetworkAdapterInfo adapter = watcher->result();
         qDebug() << "[PaqetController] Got result, adapter.name=" << adapter.name;
-        QTimer::singleShot(0, this, [watcher]() {
-            qDebug() << "[PaqetController] Deferred: about to watcher->deleteLater()";
-            watcher->deleteLater();
-            qDebug() << "[PaqetController] Deferred: watcher->deleteLater() returned";
+        // Guard with QPointer: if this watcher was replaced by another connectToSelected(), it may already be destroyed
+        QPointer<QFutureWatcher<NetworkAdapterInfo>> watcherGuard(watcher);
+        QTimer::singleShot(0, this, [watcherGuard]() {
+            if (watcherGuard) {
+                watcherGuard->deleteLater();
+            }
         });
+        if (m_connectWatcher == watcher)
+            m_connectWatcher = nullptr;
 
         if (!adapter.name.isEmpty() && !adapter.ipv4Address.isEmpty()) {
             c.guid = adapter.guid;
