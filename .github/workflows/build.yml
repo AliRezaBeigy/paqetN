@@ -487,21 +487,37 @@ jobs:
           echo "Single executable created: package/paqetN"
           ls -lh package/paqetN
 
-          # Create zip archive
+          # Wrapper script: set QT_QPA_FONTDIR so Qt finds system fonts (no fontconfig build needed)
+          cat > package/paqetn <<'WRAPPER'
+          #!/bin/sh
+          export QT_QPA_FONTDIR="${QT_QPA_FONTDIR:-/usr/share/fonts}"
+          exec "$(dirname "$0")/paqetN" "$@"
+          WRAPPER
+          sed -i 's/^          //' package/paqetn
+          chmod +x package/paqetn
+
+          # Create zip archive (wrapper + binary; user runs ./paqetn)
           cd package
-          zip paqetN-${VERSION}-linux-amd64.zip paqetN
+          zip paqetN-${VERSION}-linux-amd64.zip paqetn paqetN
           echo "Linux zip created:"
           ls -lh paqetN-${VERSION}-linux-amd64.zip
           cd ..
 
-          # Build .deb package
+          # Build .deb package: binary as paqetn.bin, wrapper as paqetn so Exec=paqetn sets font dir
           DEB_DIR=paqetn_${VERSION}_amd64
           mkdir -p ${DEB_DIR}/DEBIAN
           mkdir -p ${DEB_DIR}/usr/bin
           mkdir -p ${DEB_DIR}/usr/share/applications
           mkdir -p ${DEB_DIR}/usr/share/icons/hicolor/256x256/apps
 
-          cp package/paqetN ${DEB_DIR}/usr/bin/paqetn
+          cp package/paqetN ${DEB_DIR}/usr/bin/paqetn.bin
+          cat > ${DEB_DIR}/usr/bin/paqetn <<'WRAPPER'
+          #!/bin/sh
+          export QT_QPA_FONTDIR="${QT_QPA_FONTDIR:-/usr/share/fonts}"
+          exec /usr/bin/paqetn.bin "$@"
+          WRAPPER
+          sed -i 's/^          //' ${DEB_DIR}/usr/bin/paqetn
+          chmod +x ${DEB_DIR}/usr/bin/paqetn ${DEB_DIR}/usr/bin/paqetn.bin
 
           cat > ${DEB_DIR}/DEBIAN/control <<EOF
           Package: paqetn
