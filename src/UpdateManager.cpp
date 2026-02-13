@@ -17,6 +17,43 @@
 #include <QTextStream>
 #include <QTimer>
 #include <QDebug>
+#include <QtConcurrent>
+#include <QFutureWatcher>
+
+namespace {
+// Runs in a worker thread; never call on main thread to avoid UI lag.
+QString fetchInstalledPaqetVersionInThread(const QString &appDirPath)
+{
+    const QString exeName =
+#ifdef Q_OS_WIN
+        QStringLiteral("paqet.exe");
+#else
+        QStringLiteral("paqet");
+#endif
+    const QString exePath = appDirPath + QDir::separator() + QStringLiteral("cores") + QDir::separator() + exeName;
+
+    QProcess process;
+    process.start(exePath, QStringList() << QStringLiteral("version"));
+
+    if (!process.waitForFinished(3000)) {
+        process.start(exeName, QStringList() << QStringLiteral("version"));
+        if (!process.waitForFinished(3000))
+            return QStringLiteral("Unknown");
+    }
+
+    QString output = QString::fromUtf8(process.readAllStandardOutput()).trimmed();
+    QStringList lines = output.split(QLatin1Char('\n'), Qt::SkipEmptyParts);
+    for (const QString &line : lines) {
+        if (line.startsWith(QStringLiteral("Version:"), Qt::CaseInsensitive)) {
+            QString version = line.mid(8).trimmed();
+            if (version.startsWith(QLatin1Char('v'), Qt::CaseInsensitive))
+                version = version.mid(1);
+            return version;
+        }
+    }
+    return output.isEmpty() ? QStringLiteral("Unknown") : QStringLiteral("Unknown");
+}
+} // namespace
 
 UpdateManager::UpdateManager(QObject *parent)
     : QObject(parent)
@@ -73,50 +110,8 @@ bool UpdateManager::isPaqetBinaryAvailable(const QString &customPath) const
 
 QString UpdateManager::getInstalledPaqetVersion() const
 {
-    QString exeName =
-#ifdef Q_OS_WIN
-        QStringLiteral("paqet.exe");
-#else
-        QStringLiteral("paqet");
-#endif
-
-    QString exePath = QCoreApplication::applicationDirPath() + QDir::separator() + QStringLiteral("cores") + QDir::separator() + exeName;
-
-    QProcess process;
-    // Use "version" subcommand, not "--version" flag
-    process.start(exePath, QStringList() << QStringLiteral("version"));
-
-    if (!process.waitForFinished(3000)) {
-        // Try from PATH if local exe doesn't work
-        process.start(exeName, QStringList() << QStringLiteral("version"));
-        if (!process.waitForFinished(3000)) {
-            qDebug() << "[UpdateManager] Failed to get paqet version: process timeout";
-            return QStringLiteral("Unknown");
-        }
-    }
-
-    QString output = QString::fromUtf8(process.readAllStandardOutput()).trimmed();
-    qDebug() << "[UpdateManager] Paqet version output:" << output;
-
-    // Parse output like:
-    // Version:    v1.0.0-alpha.11
-    // Git Tag:    v1.0.0-alpha.11
-    // ...
-    QStringList lines = output.split(QLatin1Char('\n'), Qt::SkipEmptyParts);
-    for (const QString &line : lines) {
-        if (line.startsWith(QStringLiteral("Version:"), Qt::CaseInsensitive)) {
-            QString version = line.mid(8).trimmed(); // Skip "Version:"
-            // Strip 'v' prefix if present
-            if (version.startsWith(QLatin1Char('v'), Qt::CaseInsensitive)) {
-                version = version.mid(1);
-            }
-            qDebug() << "[UpdateManager] Detected paqet version:" << version;
-            return version;
-        }
-    }
-
-    qDebug() << "[UpdateManager] Could not parse paqet version from output";
-    return output.isEmpty() ? QStringLiteral("Unknown") : QStringLiteral("Unknown");
+    // Never block: return last known value (set by background fetch or after install).
+    return m_installedPaqetVersion.isEmpty() ? QStringLiteral("Unknown") : m_installedPaqetVersion;
 }
 
 void UpdateManager::checkPaqetUpdate()
@@ -132,7 +127,7 @@ void UpdateManager::checkPaqetUpdate()
 
     QNetworkRequest req(QUrl(QStringLiteral("https://api.github.com/repos/hanselime/paqet/releases/latest")));
     req.setHeader(QNetworkRequest::UserAgentHeader, QString("PaqetN/%1").arg(getPaqetNVersion()));
-    req.setTransferTimeout(30000); // 30 second timeout
+    req.setTransferTimeout(6000); // 30 second timeout
 
     m_currentReply = m_nam->get(req);
     connect(m_currentReply, &QNetworkReply::finished, this, &UpdateManager::onReleaseCheckFinished);
@@ -151,7 +146,7 @@ void UpdateManager::checkPaqetNUpdate()
 
     QNetworkRequest req(QUrl(QStringLiteral("https://api.github.com/repos/AliRezaBeigy/paqetN/releases/latest")));
     req.setHeader(QNetworkRequest::UserAgentHeader, QString("PaqetN/%1").arg(getPaqetNVersion()));
-    req.setTransferTimeout(30000); // 30 second timeout
+    req.setTransferTimeout(6000);
 
     m_currentReply = m_nam->get(req);
     connect(m_currentReply, &QNetworkReply::finished, this, &UpdateManager::onReleaseCheckFinished);
@@ -180,7 +175,7 @@ void UpdateManager::downloadPaqet(const QString &version, const QString &downloa
     QNetworkRequest req{QUrl(downloadUrl)};
     req.setHeader(QNetworkRequest::UserAgentHeader, QString("PaqetN/%1").arg(getPaqetNVersion()));
     req.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::NoLessSafeRedirectPolicy);
-    req.setTransferTimeout(300000); // 5 minute timeout
+    req.setTransferTimeout(300000);
 
     m_currentReply = m_nam->get(req);
     connect(m_currentReply, &QNetworkReply::downloadProgress, this, &UpdateManager::onDownloadProgress);
@@ -210,7 +205,7 @@ void UpdateManager::downloadPaqetNUpdate(const QString &version, const QString &
     QNetworkRequest req{QUrl(downloadUrl)};
     req.setHeader(QNetworkRequest::UserAgentHeader, QString("PaqetN/%1").arg(getPaqetNVersion()));
     req.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::NoLessSafeRedirectPolicy);
-    req.setTransferTimeout(300000); // 5 minute timeout
+    req.setTransferTimeout(300000);
 
     m_currentReply = m_nam->get(req);
     connect(m_currentReply, &QNetworkReply::downloadProgress, this, &UpdateManager::onDownloadProgress);
@@ -341,37 +336,39 @@ void UpdateManager::onReleaseCheckFinished()
             return;
         }
 
-        // Compare installed version with latest version
-        QString installedVersion = getInstalledPaqetVersion();
-        QString latestVersion = tagName;
-        
-        // Strip 'v' prefix from tagName if present for comparison
-        if (latestVersion.startsWith(QLatin1Char('v'), Qt::CaseInsensitive)) {
-            latestVersion = latestVersion.mid(1);
-        }
-        
-        qDebug() << "[UpdateManager] Comparing versions - Installed:" << installedVersion << "Latest:" << latestVersion;
-        
-        // Only report update if latest version is newer than installed version
-        if (installedVersion == QStringLiteral("Unknown")) {
-            // If we can't determine installed version, assume update is available
-            qDebug() << "[UpdateManager] Installed version unknown, assuming update available";
-            emit paqetUpdateCheckFinished(true, tagName, downloadUrl);
-            emit statusMessage(tr("Paqet update available: %1").arg(tagName));
-        } else {
-            int comparison = compareVersions(installedVersion, latestVersion);
-            if (comparison < 0) {
-                // Latest version is newer
-                qDebug() << "[UpdateManager] Update available: installed" << installedVersion << "< latest" << latestVersion;
+        // Fetch installed version in background to avoid blocking the UI
+        QString appDir = QCoreApplication::applicationDirPath();
+        QFutureWatcher<QString> *watcher = new QFutureWatcher<QString>(this);
+        connect(watcher, &QFutureWatcher<QString>::finished, this, [this, watcher, tagName, downloadUrl]() {
+            watcher->deleteLater();
+            QString installedVersion = watcher->result();
+            m_installedPaqetVersion = installedVersion;
+            emit installedPaqetVersionChanged(installedVersion);
+
+            QString latestVersion = tagName;
+            if (latestVersion.startsWith(QLatin1Char('v'), Qt::CaseInsensitive))
+                latestVersion = latestVersion.mid(1);
+
+            qDebug() << "[UpdateManager] Comparing versions - Installed:" << installedVersion << "Latest:" << latestVersion;
+
+            if (installedVersion == QStringLiteral("Unknown")) {
+                qDebug() << "[UpdateManager] Installed version unknown, assuming update available";
                 emit paqetUpdateCheckFinished(true, tagName, downloadUrl);
                 emit statusMessage(tr("Paqet update available: %1").arg(tagName));
             } else {
-                // Same or older version
-                qDebug() << "[UpdateManager] No update needed: installed" << installedVersion << ">= latest" << latestVersion;
-                emit paqetUpdateCheckFinished(false, tagName, downloadUrl);
-                emit statusMessage(tr("Paqet is up to date (version %1)").arg(installedVersion));
+                int comparison = compareVersions(installedVersion, latestVersion);
+                if (comparison < 0) {
+                    qDebug() << "[UpdateManager] Update available: installed" << installedVersion << "< latest" << latestVersion;
+                    emit paqetUpdateCheckFinished(true, tagName, downloadUrl);
+                    emit statusMessage(tr("Paqet update available: %1").arg(tagName));
+                } else {
+                    qDebug() << "[UpdateManager] No update needed: installed" << installedVersion << ">= latest" << latestVersion;
+                    emit paqetUpdateCheckFinished(false, tagName, downloadUrl);
+                    emit statusMessage(tr("Paqet is up to date (version %1)").arg(installedVersion));
+                }
             }
-        }
+        });
+        watcher->setFuture(QtConcurrent::run(fetchInstalledPaqetVersionInThread, appDir));
     }
 }
 
@@ -505,9 +502,11 @@ void UpdateManager::onDownloadFinished()
                               QFile::ReadOther | QFile::ExeOther);
 #endif
 
+        m_installedPaqetVersion = m_downloadingVersion.startsWith(QLatin1Char('v'), Qt::CaseInsensitive)
+            ? m_downloadingVersion.mid(1) : m_downloadingVersion;
         emit paqetDownloadFinished(installedPath);
         emit statusMessage(tr("Paqet %1 installed successfully").arg(m_downloadingVersion));
-        emit installedPaqetVersionChanged(getInstalledPaqetVersion());
+        emit installedPaqetVersionChanged(m_installedPaqetVersion);
         cleanup();
 
     } else if (m_downloadType == DownloadType::PaqetNUpdate) {

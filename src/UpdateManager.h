@@ -30,8 +30,11 @@ public:
     // Check if paqet binary exists
     bool isPaqetBinaryAvailable(const QString &customPath = QString()) const;
 
-    // Get installed paqet version by running paqet --version
+    // Get installed paqet version (cached; never blocks). Use refreshInstalledPaqetVersion() to update.
     QString getInstalledPaqetVersion() const;
+
+    // Refresh installed paqet version in a background thread; emits installedPaqetVersionChanged when done. Does not block UI.
+    void refreshInstalledPaqetVersion();
 
     // Get current PaqetN version
     QString getPaqetNVersion() const;
@@ -95,4 +98,5 @@ private:
     QString m_downloadingVersion;
     DownloadType m_downloadType = DownloadType::None;
     bool m_checkingPaqetN = false;
+    QString m_installedPaqetVersion; // Set by background fetch or after install; getter never blocks
 };

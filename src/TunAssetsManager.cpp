@@ -129,7 +129,7 @@ void TunAssetsManager::downloadTunAssets()
     if (m_logBuffer) m_logBuffer->append(QStringLiteral("[TunAssets] Checking hev-socks5-tunnel releases..."));
     QNetworkRequest req(QUrl(QStringLiteral("https://api.github.com/repos/heiher/hev-socks5-tunnel/releases/latest")));
     req.setHeader(QNetworkRequest::UserAgentHeader, QStringLiteral("PaqetN/1.0"));
-    req.setTransferTimeout(30000);
+    req.setTransferTimeout(6000);
     m_currentReply = m_nam->get(req);
     connect(m_currentReply, &QNetworkReply::finished, this, &TunAssetsManager::onHevReleaseCheckFinished);
 #endif
@@ -171,7 +171,7 @@ void TunAssetsManager::startHevDownload(const QString &url)
     QNetworkRequest req{QUrl(url)};
     req.setHeader(QNetworkRequest::UserAgentHeader, QStringLiteral("PaqetN/1.0"));
     req.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::NoLessSafeRedirectPolicy);
-    req.setTransferTimeout(300000);
+    req.setTransferTimeout(6000);
     m_currentReply = m_nam->get(req);
     connect(m_currentReply, &QNetworkReply::downloadProgress, this, &TunAssetsManager::onDownloadProgress);
     connect(m_currentReply, &QNetworkReply::finished, this, &TunAssetsManager::onHevDownloadFinished);

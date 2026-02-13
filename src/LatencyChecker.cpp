@@ -31,6 +31,7 @@ void LatencyChecker::check(int socksPort, const QString &url) {
     m_nam->setProxy(QNetworkProxy(QNetworkProxy::Socks5Proxy, QStringLiteral("127.0.0.1"), socksPort));
     QNetworkRequest req{QUrl(u)};
     req.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::NoLessSafeRedirectPolicy);
+    req.setTransferTimeout(4000);
     m_timer.start();
     m_reply = m_nam->get(req);
     connect(m_reply, &QNetworkReply::finished, this, &LatencyChecker::onFinished);

@@ -98,10 +98,11 @@ FluWindow {
             Platform.MenuItem {
                 text: qsTr("Exit")
                 onTriggered: {
-                    // Hide window immediately so user doesn't see the cleanup freeze
                     window.hide()
-                    // Small delay to let the hide complete, then quit
-                    Qt.callLater(Qt.quit)
+                    systemTray.visible = false
+                    // C++ requestQuit() schedules QCoreApplication::quit() in the main event
+                    // loop after the native tray menu closes (QML Timer/Qt.quit never ran)
+                    paqetController.requestQuit()
                 }
             }
         }
@@ -187,36 +188,59 @@ FluWindow {
         border.width: 1
         z: 5
 
-        // Check if any download is in progress
-        property bool downloadInProgress: paqetController.paqetDownloadInProgress || paqetController.tunAssetsDownloadInProgress
+        // Loading: checking for version (paqet) or downloading (paqet / TUN assets)
+        property bool downloadInProgress: paqetController.paqetUpdateCheckInProgress || paqetController.paqetDownloadInProgress || paqetController.tunAssetsDownloadInProgress
         property int downloadProgress: {
             if (paqetController.paqetDownloadInProgress) return paqetController.paqetDownloadProgress
             if (paqetController.tunAssetsDownloadInProgress) return paqetController.tunAssetsDownloadProgress
             return 0
         }
-        property string downloadReason: {
-            if (paqetController.paqetDownloadInProgress) return qsTr("Downloading paqet binary...")
-            if (paqetController.tunAssetsDownloadInProgress) return qsTr("Downloading TUN assets...")
+        property string downloadStatusText: {
+            if (paqetController.paqetUpdateCheckInProgress) return qsTr("Checking for latest version...")
+            if (paqetController.paqetDownloadInProgress) return qsTr("We are downloading...") + " " + bottomBar.downloadProgress + "%"
+            if (paqetController.tunAssetsDownloadInProgress) return qsTr("We are downloading...") + " " + bottomBar.downloadProgress + "%"
             return ""
         }
+        property bool downloadFailed: paqetController.downloadFailed
+        property string downloadFailedMessage: paqetController.downloadFailedMessage
+        property bool showTopLine: bottomBar.downloadInProgress || bottomBar.downloadFailed
 
-        // Thin blue progress bar at the top
+        // Loading: fixed-width line moving left-to-right; Failed: full-width red line
         Rectangle {
-            id: progressBar
+            id: progressBarContainer
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.top: parent.top
             height: 3
             color: "transparent"
-            visible: bottomBar.downloadInProgress
+            visible: bottomBar.showTopLine
+            clip: true
 
+            // Loading state: animated fixed-width bar
             Rectangle {
-                anchors.left: parent.left
+                id: loadingBar
+                width: 80
                 anchors.top: parent.top
                 anchors.bottom: parent.bottom
-                width: parent.width * (bottomBar.downloadProgress / 100.0)
+                x: 0
                 color: FluTheme.primaryColor
-                Behavior on width { NumberAnimation { duration: 150 } }
+                visible: bottomBar.downloadInProgress
+
+                NumberAnimation on x {
+                    id: loadingAnim
+                    from: 0
+                    to: Math.max(0, progressBarContainer.width - loadingBar.width)
+                    duration: 1200
+                    loops: Animation.Infinite
+                    running: bottomBar.downloadInProgress && loadingBar.visible && progressBarContainer.width > loadingBar.width
+                }
+            }
+
+            // Failed state: full-width red line
+            Rectangle {
+                anchors.fill: parent
+                color: "#c50f1f"
+                visible: bottomBar.downloadFailed
             }
         }
 
@@ -224,7 +248,7 @@ FluWindow {
             anchors.fill: parent
             anchors.leftMargin: 20
             anchors.rightMargin: 20
-            anchors.topMargin: bottomBar.downloadInProgress ? 3 : 0
+            anchors.topMargin: bottomBar.showTopLine ? 3 : 0
             spacing: 14
 
             // Profile name | status - latency (click latency icon to test)
@@ -255,19 +279,35 @@ FluWindow {
                 }
             }
 
-            // Center: download progress text when active, or interface selector
+            // Center: download status (loading or failed) or interface selector
             Item { Layout.fillWidth: true }
             FluText {
                 visible: bottomBar.downloadInProgress
-                text: bottomBar.downloadReason + " " + bottomBar.downloadProgress + "%"
+                text: bottomBar.downloadStatusText
                 font: FluTextStyle.Body
                 color: FluTheme.primaryColor
+                Layout.minimumWidth: 120
             }
-            
-            // Network interface selector (only show if more than one adapter)
+            FluText {
+                visible: bottomBar.downloadFailed
+                text: bottomBar.downloadFailedMessage
+                font: FluTextStyle.Body
+                color: "#c50f1f"
+                Layout.minimumWidth: 120
+                Layout.maximumWidth: 400
+                elide: Text.ElideRight
+                wrapMode: Text.WordWrap
+                MouseArea {
+                    anchors.fill: parent
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: paqetController.clearDownloadFailed()
+                }
+            }
+
+            // Network interface selector (only show if more than one adapter and no download state)
             FluComboBox {
                 id: interfaceCombo
-                visible: !bottomBar.downloadInProgress && window.networkAdapters.length > 1
+                visible: !bottomBar.downloadInProgress && !bottomBar.downloadFailed && window.networkAdapters.length > 1
                 Layout.preferredWidth: 220
                 property var adapterGuids: {
                     var guids = [""]  // First item is "Auto" with empty guid

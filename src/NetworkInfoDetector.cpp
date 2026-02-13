@@ -52,6 +52,20 @@ static bool isVirtualAdapter(const QString &adapterName)
     return false;
 }
 
+// Helper to skip TUN/VPN interfaces (tun, singbox_tun, etc.) - they shouldn't appear in the interface selector
+static bool isTunAdapter(const QString &adapterName, const QString &interfaceName)
+{
+    QString name = adapterName.trimmed();
+    QString iface = interfaceName.trimmed();
+    if (iface == QStringLiteral("tun")) return true;
+    if (iface == QStringLiteral("singbox_tun")) return true;
+    if (iface.startsWith(QStringLiteral("tun"), Qt::CaseInsensitive)) return true;  // tun0, tun1, ...
+    if (name.compare(QStringLiteral("tun"), Qt::CaseInsensitive) == 0) return true;
+    if (name.compare(QStringLiteral("singbox_tun"), Qt::CaseInsensitive) == 0) return true;
+    if (name.contains(QStringLiteral("singbox_tun"), Qt::CaseInsensitive)) return true;
+    return false;
+}
+
 // Helper function to check if IP is a real network IP (not APIPA/link-local)
 static bool isRealNetworkIP(const QString &ipAddress)
 {
@@ -97,6 +111,12 @@ QList<NetworkAdapterInfo> NetworkInfoDetector::getAcceptableAdapters()
         // Skip virtual adapters (Hyper-V vEthernet, VMware, etc.) so we prefer physical
         if (isVirtualAdapter(adapter.name)) {
             log(QStringLiteral("Skipping virtual adapter: '%1'").arg(adapter.name));
+            continue;
+        }
+
+        // Skip TUN/VPN interfaces (tun, singbox_tun) - not for interface selector
+        if (isTunAdapter(adapter.name, adapter.interfaceName)) {
+            log(QStringLiteral("Skipping TUN adapter: '%1' (%2)").arg(adapter.name, adapter.interfaceName));
             continue;
         }
         

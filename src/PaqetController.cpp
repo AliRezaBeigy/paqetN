@@ -49,8 +49,12 @@ PaqetController::PaqetController(QObject *parent) : QObject(parent) {
     connect(m_tunAssetsManager, &TunAssetsManager::tunAssetsDownloadStarted, this, [this] {
         m_tunAssetsDownloadInProgress = true;
         m_tunAssetsDownloadProgress = 0;
+        m_downloadFailed = false;
+        m_downloadFailedMessage.clear();
         emit tunAssetsDownloadInProgressChanged();
         emit tunAssetsDownloadProgressChanged();
+        emit downloadFailedChanged();
+        emit downloadFailedMessageChanged();
     });
     connect(m_tunAssetsManager, &TunAssetsManager::tunAssetsDownloadProgress, this, [this](int percent) {
         m_tunAssetsDownloadProgress = percent;
@@ -62,9 +66,13 @@ PaqetController::PaqetController(QObject *parent) : QObject(parent) {
         emit tunAssetsDownloadInProgressChanged();
         emit tunAssetsDownloadProgressChanged();
     });
-    connect(m_tunAssetsManager, &TunAssetsManager::tunAssetsDownloadFailed, this, [this](const QString &) {
+    connect(m_tunAssetsManager, &TunAssetsManager::tunAssetsDownloadFailed, this, [this](const QString &error) {
         m_tunAssetsDownloadInProgress = false;
+        m_downloadFailed = true;
+        m_downloadFailedMessage = error;
         emit tunAssetsDownloadInProgressChanged();
+        emit downloadFailedChanged();
+        emit downloadFailedMessageChanged();
     });
 
     connect(m_runner, &PaqetRunner::runningChanged, this, &PaqetController::isRunningChanged);
@@ -83,14 +91,26 @@ PaqetController::PaqetController(QObject *parent) : QObject(parent) {
     // Connect UpdateManager signals
     connect(m_updateManager, &UpdateManager::paqetUpdateCheckStarted, this, [this] {
         m_updateCheckInProgress = true;
+        m_paqetUpdateCheckInProgress = true;
+        m_downloadFailed = false;
+        m_downloadFailedMessage.clear();
         emit updateCheckInProgressChanged();
+        emit paqetUpdateCheckInProgressChanged();
+        emit downloadFailedChanged();
+        emit downloadFailedMessageChanged();
     });
     connect(m_updateManager, &UpdateManager::paqetUpdateCheckFinished, this, &PaqetController::onPaqetUpdateCheckFinished);
     connect(m_updateManager, &UpdateManager::paqetUpdateCheckFailed, this, [this](const QString &error) {
         m_updateCheckInProgress = false;
+        m_paqetUpdateCheckInProgress = false;
         m_updateStatusMessage = error;
+        m_downloadFailed = true;
+        m_downloadFailedMessage = error;
         emit updateCheckInProgressChanged();
+        emit paqetUpdateCheckInProgressChanged();
         emit updateStatusMessageChanged();
+        emit downloadFailedChanged();
+        emit downloadFailedMessageChanged();
     });
     connect(m_updateManager, &UpdateManager::paqetnUpdateCheckStarted, this, [this] {
         m_updateCheckInProgress = true;
@@ -106,16 +126,24 @@ PaqetController::PaqetController(QObject *parent) : QObject(parent) {
     connect(m_updateManager, &UpdateManager::paqetDownloadStarted, this, [this] {
         m_paqetDownloadInProgress = true;
         m_paqetDownloadProgress = 0;
+        m_downloadFailed = false;
+        m_downloadFailedMessage.clear();
         emit paqetDownloadInProgressChanged();
         emit paqetDownloadProgressChanged();
+        emit downloadFailedChanged();
+        emit downloadFailedMessageChanged();
     });
     connect(m_updateManager, &UpdateManager::paqetDownloadProgress, this, &PaqetController::onPaqetDownloadProgress);
     connect(m_updateManager, &UpdateManager::paqetDownloadFinished, this, &PaqetController::onPaqetDownloadFinished);
     connect(m_updateManager, &UpdateManager::paqetDownloadFailed, this, [this](const QString &error) {
         m_paqetDownloadInProgress = false;
         m_updateStatusMessage = error;
+        m_downloadFailed = true;
+        m_downloadFailedMessage = error;
         emit paqetDownloadInProgressChanged();
         emit updateStatusMessageChanged();
+        emit downloadFailedChanged();
+        emit downloadFailedMessageChanged();
     });
     connect(m_updateManager, &UpdateManager::paqetnDownloadStarted, this, [this] {
         m_paqetnDownloadInProgress = true;
@@ -633,6 +661,14 @@ void PaqetController::setAutoDownloadPaqet(bool enabled) {
     m_settings->setAutoDownloadPaqet(enabled);
 }
 
+void PaqetController::clearDownloadFailed() {
+    if (!m_downloadFailed) return;
+    m_downloadFailed = false;
+    m_downloadFailedMessage.clear();
+    emit downloadFailedChanged();
+    emit downloadFailedMessageChanged();
+}
+
 bool PaqetController::getAutoCheckUpdates() const {
     return m_settings->autoCheckUpdates();
 }
@@ -651,7 +687,9 @@ void PaqetController::setAutoUpdatePaqetN(bool enabled) {
 
 void PaqetController::onPaqetUpdateCheckFinished(bool available, const QString &version, const QString &url) {
     m_updateCheckInProgress = false;
+    m_paqetUpdateCheckInProgress = false;
     emit updateCheckInProgressChanged();
+    emit paqetUpdateCheckInProgressChanged();
 
     if (available) {
         emit paqetUpdateAvailable(version, url);
@@ -811,6 +849,12 @@ void PaqetController::setAutoHideOnStartup(bool enabled) { m_settings->setAutoHi
 bool PaqetController::getCloseToTray() const { return m_settings->closeToTray(); }
 void PaqetController::setCloseToTray(bool enabled) { m_settings->setCloseToTray(enabled); }
 
+void PaqetController::requestQuit() {
+    // Schedule quit in C++ so it runs in the main event loop after the native
+    // tray menu has closed (QML Timer / Qt.quit often never run on Windows otherwise).
+    QTimer::singleShot(300, []() { QCoreApplication::quit(); });
+}
+
 QVariantList PaqetController::detectNetworkAdapters() {
     NetworkInfoDetector detector;
     auto adapters = detector.detectAdapters();
@@ -848,10 +892,10 @@ QVariantMap PaqetController::getDefaultNetworkAdapter() {
     return map;
 }
 
-QVariantList PaqetController::getAcceptableNetworkAdapters() {
+// Runs in a worker thread to avoid blocking the UI (PowerShell + ipconfig + arp are slow).
+static QVariantList fetchAcceptableNetworkAdaptersInThread() {
     NetworkInfoDetector detector;
     auto adapters = detector.getAcceptableAdapters();
-
     QVariantList result;
     for (const auto &adapter : adapters) {
         QVariantMap map;
@@ -864,8 +908,18 @@ QVariantList PaqetController::getAcceptableNetworkAdapters() {
         map.insert(QStringLiteral("isActive"), adapter.isActive);
         result.append(map);
     }
-
     return result;
+}
+
+QVariantList PaqetController::getAcceptableNetworkAdapters() {
+    // Return cached list when valid to avoid blocking the UI (e.g. when QML refreshes after networkAdaptersChanged).
+    if (m_networkAdaptersCacheValid) {
+        return m_cachedAdapters;
+    }
+    // First load or cache invalid: run synchronously and cache result.
+    m_cachedAdapters = fetchAcceptableNetworkAdaptersInThread();
+    m_networkAdaptersCacheValid = true;
+    return m_cachedAdapters;
 }
 
 QString PaqetController::getSelectedNetworkInterface() const {
@@ -890,12 +944,16 @@ void PaqetController::startNetworkMonitoring() {
         m_networkMonitorTimer->setInterval(5000);  // Check every 5 seconds
         connect(m_networkMonitorTimer, &QTimer::timeout, this, &PaqetController::checkNetworkChanges);
     }
+    if (!m_networkMonitorWatcher) {
+        m_networkMonitorWatcher = new QFutureWatcher<QVariantList>(this);
+        connect(m_networkMonitorWatcher, &QFutureWatcher<QVariantList>::finished, this, &PaqetController::onNetworkMonitorFinished);
+    }
     
-    // Initialize the cached adapter list
-    auto adapters = getAcceptableNetworkAdapters();
+    // Initialize from cache or one synchronous run (only blocks once at startup if cache empty)
+    QVariantList adapters = getAcceptableNetworkAdapters();
     m_lastAdapterGuids.clear();
-    for (const auto &adapter : adapters) {
-        m_lastAdapterGuids.append(adapter.toMap().value(QStringLiteral("guid")).toString());
+    for (const QVariant &v : adapters) {
+        m_lastAdapterGuids.append(v.toMap().value(QStringLiteral("guid")).toString());
     }
     
     m_networkMonitorTimer->start();
@@ -908,14 +966,20 @@ void PaqetController::stopNetworkMonitoring() {
 }
 
 void PaqetController::checkNetworkChanges() {
-    // Get current adapters
-    auto adapters = getAcceptableNetworkAdapters();
-    QStringList currentGuids;
-    for (const auto &adapter : adapters) {
-        currentGuids.append(adapter.toMap().value(QStringLiteral("guid")).toString());
+    // Run heavy detection (PowerShell + ipconfig + arp) in background to avoid blocking the UI.
+    if (m_networkMonitorWatcher && m_networkMonitorWatcher->isRunning()) {
+        return;  // Skip this tick if previous run still in progress
     }
-    
-    // Check if list has changed (different count or different GUIDs)
+    m_networkMonitorWatcher->setFuture(QtConcurrent::run(fetchAcceptableNetworkAdaptersInThread));
+}
+
+void PaqetController::onNetworkMonitorFinished() {
+    if (!m_networkMonitorWatcher) return;
+    QVariantList adapters = m_networkMonitorWatcher->result();
+    QStringList currentGuids;
+    for (const QVariant &v : adapters) {
+        currentGuids.append(v.toMap().value(QStringLiteral("guid")).toString());
+    }
     bool changed = (currentGuids.size() != m_lastAdapterGuids.size());
     if (!changed) {
         for (const QString &guid : currentGuids) {
@@ -925,10 +989,14 @@ void PaqetController::checkNetworkChanges() {
             }
         }
     }
-    
     if (changed) {
         m_lastAdapterGuids = currentGuids;
+        m_cachedAdapters = adapters;
+        m_networkAdaptersCacheValid = true;
         emit networkAdaptersChanged();
+    } else {
+        m_cachedAdapters = adapters;
+        m_networkAdaptersCacheValid = true;
     }
 }
 

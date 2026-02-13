@@ -7,6 +7,7 @@
 #include <QVariantList>
 #include <QVariantMap>
 #include <QStringList>
+#include <QFutureWatcher>
 #include <functional>
 
 class LogBuffer;
@@ -42,6 +43,9 @@ class PaqetController : public QObject
     Q_PROPERTY(bool systemProxyEnabled READ systemProxyEnabled NOTIFY systemProxyEnabledChanged)
     Q_PROPERTY(bool tunAssetsDownloadInProgress READ tunAssetsDownloadInProgress NOTIFY tunAssetsDownloadInProgressChanged)
     Q_PROPERTY(int tunAssetsDownloadProgress READ tunAssetsDownloadProgress NOTIFY tunAssetsDownloadProgressChanged)
+    Q_PROPERTY(bool paqetUpdateCheckInProgress READ paqetUpdateCheckInProgress NOTIFY paqetUpdateCheckInProgressChanged)
+    Q_PROPERTY(bool downloadFailed READ downloadFailed NOTIFY downloadFailedChanged)
+    Q_PROPERTY(QString downloadFailedMessage READ downloadFailedMessage NOTIFY downloadFailedMessageChanged)
 public:
     explicit PaqetController(QObject *parent = nullptr);
     ~PaqetController() override;
@@ -67,6 +71,9 @@ public:
     bool systemProxyEnabled() const;
     bool tunAssetsDownloadInProgress() const { return m_tunAssetsDownloadInProgress; }
     int tunAssetsDownloadProgress() const { return m_tunAssetsDownloadProgress; }
+    bool paqetUpdateCheckInProgress() const { return m_paqetUpdateCheckInProgress; }
+    bool downloadFailed() const { return m_downloadFailed; }
+    QString downloadFailedMessage() const { return m_downloadFailedMessage; }
 
     Q_INVOKABLE QVariantMap getConfigForEdit(const QString &id);
     Q_INVOKABLE QVariantList getGroups();
@@ -113,6 +120,7 @@ public:
     Q_INVOKABLE void autoDownloadPaqetIfMissing();
     Q_INVOKABLE bool getAutoDownloadPaqet() const;
     Q_INVOKABLE void setAutoDownloadPaqet(bool enabled);
+    Q_INVOKABLE void clearDownloadFailed();
     Q_INVOKABLE bool getAutoCheckUpdates() const;
     Q_INVOKABLE void setAutoCheckUpdates(bool enabled);
     Q_INVOKABLE bool getAutoUpdatePaqetN() const;
@@ -125,6 +133,9 @@ public:
     Q_INVOKABLE QString getTunBinaryPath() const;
     Q_INVOKABLE void setTunBinaryPath(const QString &path);
     Q_INVOKABLE bool isTunAssetsAvailable() const;
+
+    // Quit (used by tray Exit so quit runs from C++ event loop)
+    Q_INVOKABLE void requestQuit();
 
     // Startup & Tray settings
     Q_INVOKABLE bool getStartOnBoot() const;
@@ -179,6 +190,9 @@ signals:
     void systemProxyEnabledChanged();
     void tunAssetsDownloadInProgressChanged();
     void tunAssetsDownloadProgressChanged();
+    void paqetUpdateCheckInProgressChanged();
+    void downloadFailedChanged();
+    void downloadFailedMessageChanged();
     void networkAdaptersChanged();
 
 private slots:
@@ -219,9 +233,16 @@ private:
     bool m_autoDownloadMode = false; // Track if current check is for auto-download
     bool m_tunAssetsDownloadInProgress = false;
     int m_tunAssetsDownloadProgress = 0;
-    
-    // Network monitoring
+    bool m_paqetUpdateCheckInProgress = false;
+    bool m_downloadFailed = false;
+    QString m_downloadFailedMessage;
+
+    // Network monitoring (detection runs in background to avoid UI lag)
     QTimer *m_networkMonitorTimer = nullptr;
-    QStringList m_lastAdapterGuids;  // Cache of adapter GUIDs to detect changes
+    QFutureWatcher<QVariantList> *m_networkMonitorWatcher = nullptr;
+    QStringList m_lastAdapterGuids;
+    QVariantList m_cachedAdapters;
+    bool m_networkAdaptersCacheValid = false;
     void checkNetworkChanges();
+    void onNetworkMonitorFinished();
 };
