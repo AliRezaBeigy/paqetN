@@ -149,6 +149,7 @@ public:
     // Admin privileges (for TUN mode on Windows)
     Q_INVOKABLE bool isRunningAsAdmin() const;
     Q_INVOKABLE void restartAsAdmin();
+    static const char kElevatedRestartArg[]; // passed when restarting elevated so main() retries single-instance lock
 
     // Network detection
     Q_INVOKABLE QVariantList detectNetworkAdapters();

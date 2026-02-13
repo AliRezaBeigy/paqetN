@@ -1,5 +1,6 @@
 #include "PaqetController.h"
 #include "PaqetConfig.h"
+#include "ChildProcessJob.h"
 #include "LogBuffer.h"
 #include "PaqetRunner.h"
 #include "LatencyChecker.h"
@@ -28,6 +29,7 @@
 #endif
 
 PaqetController::PaqetController(QObject *parent) : QObject(parent) {
+    ChildProcessJob::init();
     m_repo = new ConfigRepository(this);
     m_settings = new SettingsRepository(this);
     m_configList = new ConfigListModel(this);
@@ -795,6 +797,25 @@ void PaqetController::setProxyMode(const QString &mode) {
     QString oldMode = m_settings->proxyMode();
     if (oldMode == mode) return;
 
+    // When switching to TUN, validate requirements before persisting so that if the user
+    // dismisses the download/admin prompt (Later/Cancel), the mode switch stays on the previous mode.
+    if (mode == QLatin1String("tun")) {
+        if (m_tunAssetsManager && !m_tunAssetsManager->isTunAssetsAvailable()) {
+            m_logBuffer->append(tr("[PaqetN] TUN assets not found, prompting download..."));
+            emit tunAssetsMissingPrompt();
+            emit proxyModeChanged(); // Force UI combo to re-read unchanged proxyMode so it reverts visually
+            return;
+        }
+#ifdef Q_OS_WIN
+        if (!isRunningAsAdmin()) {
+            m_logBuffer->append(tr("[PaqetN] TUN mode requires administrator privileges."));
+            emit adminPrivilegeRequired();
+            emit proxyModeChanged(); // Force UI combo to re-read unchanged proxyMode so it reverts visually
+            return;
+        }
+#endif
+    }
+
     m_settings->setProxyMode(mode);
     emit proxyModeChanged();
 
@@ -837,12 +858,6 @@ void PaqetController::setProxyMode(const QString &mode) {
             m_logBuffer->append(tr("[PaqetN] WARNING: HTTP proxy failed to start, SOCKS5 proxy is still active on port %1").arg(socksPort));
         }
     } else if (mode == QLatin1String("tun")) {
-        // Check if TUN assets are available
-        if (m_tunAssetsManager && !m_tunAssetsManager->isTunAssetsAvailable()) {
-            m_logBuffer->append(tr("[PaqetN] TUN assets not found, prompting download..."));
-            emit tunAssetsMissingPrompt();
-            return;
-        }
         m_logBuffer->append(tr("[PaqetN] Starting TUN mode..."));
         m_tunManager->setTunBinaryPath(m_settings->tunBinaryPath());
         if (!m_tunManager->start(c.socksPort(), c.serverAddr)) {
@@ -1046,11 +1061,18 @@ bool PaqetController::isRunningAsAdmin() const
 #endif
 }
 
+// Passed to the elevated process so it retries the single-instance lock while the current process exits
+const char PaqetController::kElevatedRestartArg[] = "--elevated-restart";
+
 void PaqetController::restartAsAdmin()
 {
 #ifdef Q_OS_WIN
     QString exePath = QCoreApplication::applicationFilePath();
-    QString params = QCoreApplication::arguments().mid(1).join(QLatin1Char(' '));
+    QStringList args = QCoreApplication::arguments();
+    args.removeFirst(); // drop executable path
+    if (!args.contains(QLatin1String(kElevatedRestartArg)))
+        args.append(QLatin1String(kElevatedRestartArg));
+    QString params = args.join(QLatin1Char(' '));
 
     if (m_logBuffer)
         m_logBuffer->append(tr("[PaqetN] Restarting with administrator privileges..."));

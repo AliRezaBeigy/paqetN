@@ -38,4 +38,5 @@ private:
     QProcess *m_process = nullptr;
     QString m_customPaqetPath;
     QString m_configPath;
+    qint64 m_registeredChildPid = 0;  // for CrashHandler unregister (Unix)
 };

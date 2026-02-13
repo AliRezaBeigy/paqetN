@@ -20,6 +20,11 @@ public:
     /** Optional: set the path to the executable for symbol resolution hints in the report. */
     static void setExecutablePath(const QString &path);
 
+    /** Register a child process PID so it is killed when we crash (Unix only; on Windows job object is used). */
+    static void registerChildPid(qint64 pid);
+    /** Unregister a child process PID. */
+    static void unregisterChildPid(qint64 pid);
+
 private:
     CrashHandler() = delete;
 };

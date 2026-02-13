@@ -61,6 +61,7 @@ static bool isTunAdapter(const QString &adapterName, const QString &interfaceNam
     if (iface == QStringLiteral("singbox_tun")) return true;
     if (iface.startsWith(QStringLiteral("tun"), Qt::CaseInsensitive)) return true;  // tun0, tun1, ...
     if (name.compare(QStringLiteral("tun"), Qt::CaseInsensitive) == 0) return true;
+    if (name.startsWith(QStringLiteral("tun"), Qt::CaseInsensitive)) return true;  // tun0, tun1 (Windows: name is set, interfaceName often empty)
     if (name.compare(QStringLiteral("singbox_tun"), Qt::CaseInsensitive) == 0) return true;
     if (name.contains(QStringLiteral("singbox_tun"), Qt::CaseInsensitive)) return true;
     return false;

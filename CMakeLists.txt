@@ -66,6 +66,7 @@ set(PAQET_SOURCES
     src/PaqetRunner.cpp
     src/LatencyChecker.cpp
     src/SingleInstanceGuard.cpp
+    src/ChildProcessJob.cpp
     src/CrashHandler.cpp
     src/UpdateManager.cpp
     src/NetworkInfoDetector.cpp

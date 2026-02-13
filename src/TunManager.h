@@ -49,4 +49,5 @@ private:
     QString m_originalGateway;
     QString m_originalInterface;
     int m_tunInterfaceIndex = -1;
+    qint64 m_registeredChildPid = 0;  // for CrashHandler unregister (Unix)
 };

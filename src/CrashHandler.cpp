@@ -32,6 +32,11 @@ static wchar_t s_reportDirW[MAX_PATH * 2] = {};
 #if defined(__unix__) || defined(__APPLE__)
 static int s_crashReportFd = -1;
 static char s_crashReportPath[1024] = {};
+#include <atomic>
+#include <csignal>
+static constexpr int kMaxChildPids = 64;
+static pid_t s_childPids[kMaxChildPids];
+static std::atomic<int> s_childPidCount{0};
 #endif
 
 #ifdef Q_OS_WIN
@@ -185,6 +190,13 @@ static void writeStr(int fd, const char *s)
 
 static void crashSignalHandler(int sig)
 {
+    // Kill child processes (paqet, hev-socks5-tunnel) so they don't outlive us
+    const int n = s_childPidCount.load(std::memory_order_acquire);
+    for (int i = 0; i < n && i < kMaxChildPids; i++) {
+        pid_t p = s_childPids[i];
+        if (p > 0)
+            kill(p, SIGKILL);
+    }
     if (s_crashReportFd >= 0) {
         char header[512];
         snprintf(header, sizeof(header),
@@ -267,4 +279,37 @@ void CrashHandler::install(const QString &reportDir)
 void CrashHandler::setExecutablePath(const QString &path)
 {
     s_executablePath = path;
+}
+
+void CrashHandler::registerChildPid(qint64 pid)
+{
+#if defined(__unix__) || defined(__APPLE__)
+    pid_t p = static_cast<pid_t>(pid);
+    if (p <= 0) return;
+    int c = s_childPidCount.load(std::memory_order_relaxed);
+    if (c < kMaxChildPids) {
+        s_childPids[c] = p;
+        s_childPidCount.store(c + 1, std::memory_order_release);
+    }
+#else
+    (void)pid;
+#endif
+}
+
+void CrashHandler::unregisterChildPid(qint64 pid)
+{
+#if defined(__unix__) || defined(__APPLE__)
+    pid_t p = static_cast<pid_t>(pid);
+    if (p <= 0) return;
+    int n = s_childPidCount.load(std::memory_order_acquire);
+    for (int i = 0; i < n; i++) {
+        if (s_childPids[i] == p) {
+            s_childPids[i] = s_childPids[n - 1];
+            s_childPidCount.store(n - 1, std::memory_order_release);
+            break;
+        }
+    }
+#else
+    (void)pid;
+#endif
 }

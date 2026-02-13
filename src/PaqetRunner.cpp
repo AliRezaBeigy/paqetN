@@ -1,4 +1,6 @@
 #include "PaqetRunner.h"
+#include "ChildProcessJob.h"
+#include "CrashHandler.h"
 #include <QCoreApplication>
 #include <QDir>
 #include <QStandardPaths>
@@ -82,6 +84,11 @@ void PaqetRunner::start(const PaqetConfig &config, const QString &logLevel) {
     m_process->setWorkingDirectory(dir);
     m_process->setProgram(binary);
     m_process->setArguments({ QStringLiteral("run"), QStringLiteral("-c"), m_configPath });
+#ifndef Q_OS_WIN
+    auto unixModifier = ChildProcessJob::childProcessModifier();
+    if (unixModifier)
+        m_process->setChildProcessModifier(unixModifier);
+#endif
 
     if (m_logBuffer) m_logBuffer->append(QStringLiteral("[paqet] Starting process: ") + binary + QLatin1String(" run -c ") + m_configPath);
     m_process->start(QProcess::ReadOnly);
@@ -118,11 +125,23 @@ void PaqetRunner::onProcessStateChanged(QProcess::ProcessState state) {
         m_logBuffer->append(QStringLiteral("[paqet] Process state changed to: ") + stateStr);
     }
     if (state == QProcess::Running) {
+#ifdef Q_OS_WIN
+        ChildProcessJob::assignProcess(m_process->processId());
+#else
+        m_registeredChildPid = m_process->processId();
+        CrashHandler::registerChildPid(m_registeredChildPid);
+#endif
         if (m_logBuffer)
             m_logBuffer->append(QStringLiteral("[paqet] Process started successfully (PID: %1)").arg(m_process->processId()));
         emit started();
     }
     if (state == QProcess::NotRunning) {
+#ifndef Q_OS_WIN
+        if (m_registeredChildPid != 0) {
+            CrashHandler::unregisterChildPid(m_registeredChildPid);
+            m_registeredChildPid = 0;
+        }
+#endif
         if (m_logBuffer) m_logBuffer->append(QStringLiteral("[paqet] stopped"));
         emit stopped();
     }

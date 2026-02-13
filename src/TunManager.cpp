@@ -1,4 +1,6 @@
 #include "TunManager.h"
+#include "ChildProcessJob.h"
+#include "CrashHandler.h"
 #include "LogBuffer.h"
 #include <QCoreApplication>
 #include <QDir>
@@ -201,10 +203,15 @@ bool TunManager::start(int socksPort, const QString &serverAddr) {
         if (m_logBuffer) m_logBuffer->append(QStringLiteral("[TUN] WARNING: Server route setup had issues"));
     }
 
-    // Launch process
+    // Launch process; ensure hev is killed when PaqetN exits (including on crash)
     m_process->setWorkingDirectory(dir);
     m_process->setProgram(binary);
     m_process->setArguments({m_configPath});
+#ifndef Q_OS_WIN
+    auto unixModifier = ChildProcessJob::childProcessModifier();
+    if (unixModifier)
+        m_process->setChildProcessModifier(unixModifier);
+#endif
 
     if (m_logBuffer) m_logBuffer->append(QStringLiteral("[TUN] Starting: ") + binary + QLatin1Char(' ') + m_configPath);
     m_process->start(QProcess::ReadOnly);
@@ -221,6 +228,13 @@ bool TunManager::start(int socksPort, const QString &serverAddr) {
 
     if (m_logBuffer)
         m_logBuffer->append(QStringLiteral("[TUN] Process started (PID: %1)").arg(m_process->processId()));
+
+#ifdef Q_OS_WIN
+    ChildProcessJob::assignProcess(m_process->processId());
+#else
+    m_registeredChildPid = m_process->processId();
+    CrashHandler::registerChildPid(m_registeredChildPid);
+#endif
 
 #ifdef Q_OS_WIN
     // Wait for TUN interface to be created by hev-socks5-tunnel
@@ -557,6 +571,12 @@ void TunManager::onProcessStateChanged(QProcess::ProcessState state) {
         m_logBuffer->append(QStringLiteral("[TUN] Process state: ") + stateStr);
     }
     if (state == QProcess::NotRunning) {
+#ifndef Q_OS_WIN
+        if (m_registeredChildPid != 0) {
+            CrashHandler::unregisterChildPid(m_registeredChildPid);
+            m_registeredChildPid = 0;
+        }
+#endif
         cleanupRoutes();
         if (m_logBuffer) m_logBuffer->append(QStringLiteral("[TUN] Stopped"));
         emit stopped();
