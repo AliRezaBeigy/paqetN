@@ -18,6 +18,7 @@
 #include <QCoreApplication>
 #include <QDir>
 #include <QSettings>
+#include <QDateTime>
 
 #ifdef Q_OS_WIN
 #include <windows.h>
@@ -379,8 +380,14 @@ void PaqetController::connectToSelected() {
     QString logLevel = m_settings->logLevel();
     QFutureWatcher<NetworkAdapterInfo> *watcher = new QFutureWatcher<NetworkAdapterInfo>(this);
     connect(watcher, &QFutureWatcher<NetworkAdapterInfo>::finished, this, [this, watcher, c]() mutable {
-        watcher->deleteLater();
+        qDebug() << "[PaqetController] Network future finished: slot entered";
         NetworkAdapterInfo adapter = watcher->result();
+        qDebug() << "[PaqetController] Got result, adapter.name=" << adapter.name;
+        QTimer::singleShot(0, this, [watcher]() {
+            qDebug() << "[PaqetController] Deferred: about to watcher->deleteLater()";
+            watcher->deleteLater();
+            qDebug() << "[PaqetController] Deferred: watcher->deleteLater() returned";
+        });
 
         if (!adapter.name.isEmpty() && !adapter.ipv4Address.isEmpty()) {
             c.guid = adapter.guid;
@@ -446,6 +453,7 @@ void PaqetController::connectToSelected() {
             QObject::disconnect(conns->failed);
             delete conns;
             m_connectedConfigId = c.id;
+            m_connectionEstablishedAt = QDateTime::currentMSecsSinceEpoch();
             m_logBuffer->append(tr("[PaqetN] Connection initiated successfully"));
             if (mode == QLatin1String("tun")) {
                 m_logBuffer->append(tr("[PaqetN] Starting TUN mode..."));
@@ -478,8 +486,10 @@ void PaqetController::connectToSelected() {
             m_logBuffer->append(tr("[PaqetN] ERROR: Failed to start paqet process: %1").arg(err));
         });
         m_runner->start(c, m_settings->logLevel());
+        qDebug() << "[PaqetController] Network-finished lambda done, m_runner->start() called";
     });
 
+    qDebug() << "[PaqetController] Starting QtConcurrent::run for network detection";
     QFuture<NetworkAdapterInfo> future = QtConcurrent::run([logLevel, selectedGuid]() {
         NetworkInfoDetector detector;
         detector.setLogBuffer(nullptr);  // Do not log from worker thread (LogBuffer not thread-safe)
@@ -521,6 +531,7 @@ void PaqetController::disconnectAsync(const std::function<void()> &callback) {
     int pending = (runnerWasRunning ? 1 : 0) + (tunWasRunning ? 1 : 0);
     if (pending == 0) {
         m_connectedConfigId.clear();
+        m_connectionEstablishedAt = 0;
         m_latencyMs = -1;
         emit latencyMsChanged();
         if (callback) callback();
@@ -535,6 +546,7 @@ void PaqetController::disconnectAsync(const std::function<void()> &callback) {
         QObject::disconnect(state->c1);
         QObject::disconnect(state->c2);
         m_connectedConfigId.clear();
+        m_connectionEstablishedAt = 0;
         m_latencyMs = -1;
         emit latencyMsChanged();
         if (state->cb) state->cb();
@@ -553,7 +565,22 @@ void PaqetController::disconnect() {
 void PaqetController::testLatency() {
     PaqetConfig c = selectedConfig();
     if (c.id.isEmpty()) return;
-    m_latencyChecker->check(c.socksPort(), m_settings->connectionCheckUrl());
+    auto doCheck = [this]() {
+        PaqetConfig cfg = selectedConfig();
+        if (cfg.id.isEmpty()) return;
+        m_latencyChecker->check(cfg.socksPort(), m_settings->connectionCheckUrl());
+    };
+    // If we just connected (e.g. after profile switch), wait for SOCKS to be ready
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    const bool recentlyConnected = isRunning() && m_connectionEstablishedAt > 0
+        && (now - m_connectionEstablishedAt) < 3000;
+    if (recentlyConnected) {
+        m_latencyTesting = true;
+        emit latencyTestingChanged();
+        QTimer::singleShot(2000, this, doCheck);
+    } else {
+        doCheck();
+    }
 }
 
 void PaqetController::clearLog() {

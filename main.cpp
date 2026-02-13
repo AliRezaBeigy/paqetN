@@ -6,6 +6,7 @@
 #include <QtQml/qqmlextensionplugin.h>
 #include "src/PaqetController.h"
 #include "src/SingleInstanceGuard.h"
+#include "src/CrashHandler.h"
 
 #if defined(QT_STATIC) || !defined(QT_SHARED)
 Q_IMPORT_QML_PLUGIN(FluentUIPlugin)
@@ -18,6 +19,11 @@ int main(int argc, char *argv[])
 #endif
 
     QApplication app(argc, argv);
+
+    // Install crash handler so on SIGSEGV/unhandled exception we write a report file
+    // that users can share to help debug (stack trace, exception address, etc.).
+    CrashHandler::install(app.applicationDirPath());
+    CrashHandler::setExecutablePath(app.applicationFilePath());
 
     app.setOrganizationName(QStringLiteral("paqetN"));
     app.setApplicationName(QStringLiteral("paqetN"));

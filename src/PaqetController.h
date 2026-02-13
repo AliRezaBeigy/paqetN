@@ -222,6 +222,7 @@ private:
     HttpToSocksProxy *m_httpProxy = nullptr;
     QString m_selectedConfigId;
     QString m_connectedConfigId;
+    qint64 m_connectionEstablishedAt = 0;  // When runner last started (for latency-test grace period)
     int m_latencyMs = -1;
     bool m_latencyTesting = false;
     bool m_updateCheckInProgress = false;

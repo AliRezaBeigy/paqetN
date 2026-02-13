@@ -66,6 +66,7 @@ set(PAQET_SOURCES
     src/PaqetRunner.cpp
     src/LatencyChecker.cpp
     src/SingleInstanceGuard.cpp
+    src/CrashHandler.cpp
     src/UpdateManager.cpp
     src/NetworkInfoDetector.cpp
     src/TunManager.cpp
@@ -134,7 +135,7 @@ target_link_libraries(apppaqetN
     PRIVATE Qt6::Quick Qt6::QuickControls2 Qt6::Network Qt6::Widgets Qt6::Svg Qt6::PrintSupport Qt6::Core5Compat Qt6::Concurrent fluentuiplugin QuaZip::QuaZip
 )
 if(WIN32)
-    target_link_libraries(apppaqetN PRIVATE wininet rasapi32 iphlpapi ws2_32)
+    target_link_libraries(apppaqetN PRIVATE wininet rasapi32 iphlpapi ws2_32 dbghelp psapi)
     # For static builds on MinGW, explicitly link static compression libraries
     # These are required by Qt's static build
     if(NOT BUILD_SHARED_LIBS AND MINGW)
