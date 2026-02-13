@@ -1,13 +1,19 @@
 #include <QApplication>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
-#include <QMessageBox>
 #include <QIcon>
 #include <QThread>
+#include <QLocalServer>
+#include <QLocalSocket>
+#include <QWindow>
 #include <QtQml/qqmlextensionplugin.h>
 #include "src/PaqetController.h"
 #include "src/SingleInstanceGuard.h"
 #include "src/CrashHandler.h"
+
+namespace {
+const char kSingleInstanceServerName[] = "paqetN_single_instance";
+}
 
 #if defined(QT_STATIC) || !defined(QT_SHARED)
 Q_IMPORT_QML_PLUGIN(FluentUIPlugin)
@@ -45,14 +51,20 @@ int main(int argc, char *argv[])
                 if (singleInstance.tryLock())
                     break;
                 if (waited + intervalMs >= retryMs) {
-                    QMessageBox::warning(nullptr, QApplication::applicationDisplayName(),
-                        QObject::tr("paqetN is already running."));
+                    // Tell existing instance to come to front, then exit
+                    QLocalSocket socket;
+                    socket.connectToServer(QLatin1String(kSingleInstanceServerName));
+                    if (socket.waitForConnected(500))
+                        socket.disconnectFromServer();
                     return 0;
                 }
             }
         } else {
-            QMessageBox::warning(nullptr, QApplication::applicationDisplayName(),
-                QObject::tr("paqetN is already running."));
+            // Tell existing instance to come to front, then exit (no dialog)
+            QLocalSocket socket;
+            socket.connectToServer(QLatin1String(kSingleInstanceServerName));
+            if (socket.waitForConnected(500))
+                socket.disconnectFromServer();
             return 0;
         }
     }
@@ -68,6 +80,22 @@ int main(int argc, char *argv[])
         []() { QCoreApplication::exit(-1); },
         Qt::QueuedConnection);
     engine.loadFromModule("paqetN", "Main");
+
+    // When another instance is started, it connects here; bring main window to front
+    QLocalServer raiseServer;
+    QObject::connect(&raiseServer, &QLocalServer::newConnection, &app, [&raiseServer, &engine]() {
+        if (QLocalSocket *client = raiseServer.nextPendingConnection()) {
+            client->disconnectFromServer();
+            client->deleteLater();
+            QObject *root = engine.rootObjects().value(0);
+            if (QWindow *win = qobject_cast<QWindow *>(root)) {
+                win->show();
+                win->raise();
+                win->requestActivate();
+            }
+        }
+    });
+    raiseServer.listen(QLatin1String(kSingleInstanceServerName));
 
     return app.exec();
 }

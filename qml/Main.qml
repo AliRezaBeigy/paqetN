@@ -94,6 +94,46 @@ FluWindow {
                     nav_view.push(Qt.resolvedUrl("dialogs/SettingsPage.qml"))
                 }
             }
+            Platform.Menu {
+                title: qsTr("Proxy mode")
+                Platform.MenuItem {
+                    text: qsTr("Socks only")
+                    checkable: true
+                    checked: paqetController.proxyMode === "none"
+                    onTriggered: paqetController.setProxyMode("none")
+                }
+                Platform.MenuItem {
+                    text: qsTr("System proxy")
+                    checkable: true
+                    checked: paqetController.proxyMode === "system"
+                    onTriggered: paqetController.setProxyMode("system")
+                }
+                Platform.MenuItem {
+                    text: qsTr("Tun mode")
+                    checkable: true
+                    checked: paqetController.proxyMode === "tun"
+                    onTriggered: paqetController.setProxyMode("tun")
+                }
+            }
+            Platform.Menu {
+                id: trayInterfaceMenu
+                title: qsTr("Network interface")
+                visible: window.networkAdapters.length > 1
+                Instantiator {
+                    model: window.trayInterfaceOptions
+                    delegate: Platform.MenuItem {
+                        text: modelData.displayName
+                        checkable: true
+                        checked: window.selectedNetworkInterface === modelData.guid
+                        onTriggered: {
+                            window.selectedNetworkInterface = modelData.guid
+                            paqetController.setSelectedNetworkInterface(modelData.guid)
+                        }
+                    }
+                    onObjectAdded: function(index, object) { trayInterfaceMenu.insertItem(index, object) }
+                    onObjectRemoved: function(index, object) { trayInterfaceMenu.removeItem(object) }
+                }
+            }
             Platform.MenuSeparator {}
             Platform.MenuItem {
                 text: qsTr("Exit")
@@ -112,6 +152,8 @@ FluWindow {
     property var groupsModel: []
     property var networkAdapters: []
     property string selectedNetworkInterface: ""
+    // For tray context menu: [{guid, displayName}, ...], built when networkAdapters change
+    property var trayInterfaceOptions: []
 
     // Modern Dark Theme - Slate/Charcoal palette with vibrant accents
     readonly property var accentPalette: ["#818CF8", "#34D399", "#FBBF24", "#F87171", "#C084FC", "#F472B6", "#22D3EE", "#FB923C"]
@@ -164,6 +206,14 @@ FluWindow {
                 paqetController.setSelectedNetworkInterface("")
             }
         }
+        // Build tray interface options for context menu (Auto + each adapter)
+        var opts = [{ guid: "", displayName: qsTr("Auto") }]
+        for (var j = 0; j < networkAdapters.length; j++) {
+            var ad = networkAdapters[j]
+            var ip = (ad.ipv4Address || "").replace(":0", "")
+            opts.push({ guid: ad.guid, displayName: ad.name + " (" + ip + ")" })
+        }
+        trayInterfaceOptions = opts
     }
 
     Connections {
