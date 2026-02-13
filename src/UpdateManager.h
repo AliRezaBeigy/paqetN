@@ -84,6 +84,7 @@ private:
     QString detectPlatform() const;
     QString findAssetUrl(const QByteArray &jsonData, const QString &platform) const;
     bool extractZip(const QString &zipPath, const QString &destDir);
+    bool extractTarGz(const QString &archivePath, const QString &destDir);
     QString getPaqetInstallDir() const;
     void performSelfUpdate(const QString &newExePath);
     void cleanup();
@@ -96,6 +97,7 @@ private:
     QNetworkReply *m_currentReply = nullptr;
     QTemporaryFile *m_downloadFile = nullptr;
     QString m_downloadingVersion;
+    QString m_paqetDownloadUrl; // URL of paqet asset (used to choose .tar.gz vs .zip extraction)
     DownloadType m_downloadType = DownloadType::None;
     bool m_checkingPaqetN = false;
     QString m_installedPaqetVersion; // Set by background fetch or after install; getter never blocks

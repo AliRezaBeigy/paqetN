@@ -161,6 +161,7 @@ void UpdateManager::downloadPaqet(const QString &version, const QString &downloa
 
     m_downloadType = DownloadType::PaqetBinary;
     m_downloadingVersion = version;
+    m_paqetDownloadUrl = downloadUrl;
 
     emit paqetDownloadStarted();
     emit statusMessage(tr("Downloading paqet %1...").arg(version));
@@ -439,7 +440,9 @@ void UpdateManager::onDownloadFinished()
         qDebug() << "[UpdateManager] Installing to:" << installDir;
         QDir().mkpath(installDir);
 
-        if (!extractZip(downloadedFilePath, installDir)) {
+        const bool isTarGz = m_paqetDownloadUrl.endsWith(QLatin1String(".tar.gz"), Qt::CaseInsensitive);
+        bool extractOk = isTarGz ? extractTarGz(downloadedFilePath, installDir) : extractZip(downloadedFilePath, installDir);
+        if (!extractOk) {
             QString error = tr("Failed to extract downloaded file");
             qWarning() << "[UpdateManager]" << error;
             emit paqetDownloadFailed(error);
@@ -587,6 +590,49 @@ bool UpdateManager::extractZip(const QString &zipPath, const QString &destDir)
     return true;
 }
 
+bool UpdateManager::extractTarGz(const QString &archivePath, const QString &destDir)
+{
+    qDebug() << "[UpdateManager] Extracting tar.gz:" << archivePath << "to" << destDir;
+
+    QFileInfo archiveInfo(archivePath);
+    if (!archiveInfo.exists()) {
+        QString error = tr("Archive does not exist: %1").arg(archivePath);
+        qWarning() << "[UpdateManager]" << error;
+        emit statusMessage(error);
+        return false;
+    }
+
+    qDebug() << "[UpdateManager] Archive file size:" << archiveInfo.size() << "bytes";
+    emit statusMessage(tr("Extracting files..."));
+
+    QDir dir(destDir);
+    if (!dir.exists()) {
+        dir.mkpath(QStringLiteral("."));
+    }
+
+    QProcess tar;
+    tar.setProgram(QStringLiteral("tar"));
+    tar.setArguments(QStringList() << QStringLiteral("-xzf") << archivePath << QStringLiteral("-C") << destDir);
+    tar.start();
+    if (!tar.waitForFinished(60000)) {
+        QString error = tr("Failed to extract tar.gz: %1").arg(tar.errorString());
+        qWarning() << "[UpdateManager]" << error;
+        emit statusMessage(error);
+        return false;
+    }
+    if (tar.exitStatus() != QProcess::NormalExit || tar.exitCode() != 0) {
+        QString errOut = QString::fromUtf8(tar.readAllStandardError()).trimmed();
+        QString error = tr("Failed to extract tar.gz (exit %1): %2").arg(tar.exitCode()).arg(errOut.isEmpty() ? tar.errorString() : errOut);
+        qWarning() << "[UpdateManager]" << error;
+        emit statusMessage(error);
+        return false;
+    }
+
+    qDebug() << "[UpdateManager] tar.gz extraction completed successfully";
+    emit statusMessage(tr("Extraction completed"));
+    return true;
+}
+
 QString UpdateManager::getPaqetInstallDir() const
 {
     // Install in cores subdirectory of application directory
@@ -668,6 +714,7 @@ void UpdateManager::cleanup()
 
     m_downloadType = DownloadType::None;
     m_downloadingVersion.clear();
+    m_paqetDownloadUrl.clear();
 }
 
 int UpdateManager::compareVersions(const QString &v1, const QString &v2) const

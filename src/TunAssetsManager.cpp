@@ -60,7 +60,7 @@ QString TunAssetsManager::detectPlatform() const
     return QStringLiteral("darwin-x86_64");
 #endif
 #elif defined(Q_OS_LINUX)
-    return QStringLiteral("linux-amd64");
+    return QStringLiteral("linux-x86_64");
 #else
     return QString();
 #endif
