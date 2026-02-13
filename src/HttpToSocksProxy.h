@@ -5,14 +5,19 @@
 #include <QTcpSocket>
 #include <QList>
 #include <QByteArray>
+#include <QThread>
+#include <functional>
 
 class LogBuffer;
+class ProxyServerRunner;
 
 /**
  * @brief HTTP-to-SOCKS5 proxy server
- * 
+ *
  * Accepts HTTP and HTTPS (via CONNECT) requests on a local port
  * and forwards them through a SOCKS5 proxy.
+ * Runs the server and all connection I/O in a dedicated thread so that
+ * large downloads (e.g. IDM) do not freeze the UI.
  */
 class HttpToSocksProxy : public QObject
 {
@@ -40,7 +45,7 @@ public:
     /**
      * @brief Check if the proxy is running
      */
-    bool isRunning() const;
+    bool isRunning() const { return m_running; }
 
     /**
      * @brief Get the HTTP port the proxy is listening on
@@ -53,17 +58,20 @@ signals:
     void error(const QString &message);
 
 private slots:
-    void onNewConnection();
+    void onLogFromWorker(const QString &message);
 
 private:
     class ClientConnection;
-    
+    friend class ProxyServerRunner;  // defined in .cpp; needs ClientConnection access
+
     void log(const QString &message);
 
-    QTcpServer *m_server = nullptr;
     LogBuffer *m_logBuffer = nullptr;
     QString m_socksHost;
     quint16 m_socksPort = 0;
     quint16 m_httpPort = 0;
-    QList<ClientConnection*> m_connections;
+    bool m_running = false;
+
+    QThread *m_thread = nullptr;
+    QObject *m_runner = nullptr;  // ProxyServerRunner, lives in m_thread
 };

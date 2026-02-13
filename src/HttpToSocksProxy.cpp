@@ -3,6 +3,7 @@
 #include <QHostAddress>
 #include <QRegularExpression>
 #include <QUrl>
+#include <QMetaObject>
 
 // SOCKS5 constants
 static constexpr quint8 SOCKS5_VERSION = 0x05;
@@ -11,21 +12,24 @@ static constexpr quint8 SOCKS5_CMD_CONNECT = 0x01;
 static constexpr quint8 SOCKS5_ATYP_DOMAIN = 0x03;
 static constexpr quint8 SOCKS5_ATYP_IPV4 = 0x01;
 
+class ProxyServerRunner;
+
 /**
- * @brief Handles a single client connection
+ * @brief Handles a single client connection (used from worker thread)
  */
 class HttpToSocksProxy::ClientConnection : public QObject
 {
     Q_OBJECT
 public:
-    ClientConnection(QTcpSocket *clientSocket, const QString &socksHost, quint16 socksPort, 
-                     LogBuffer *logBuffer, HttpToSocksProxy *parent)
+    using LogFunc = std::function<void(const QString &)>;
+
+    ClientConnection(QTcpSocket *clientSocket, const QString &socksHost, quint16 socksPort,
+                     LogFunc logFunc, QObject *parent)
         : QObject(parent)
         , m_client(clientSocket)
         , m_socksHost(socksHost)
         , m_socksPort(socksPort)
-        , m_logBuffer(logBuffer)
-        , m_proxy(parent)
+        , m_logFunc(std::move(logFunc))
     {
         m_client->setParent(this);
         m_socks = new QTcpSocket(this);
@@ -310,15 +314,14 @@ private:
     }
 
     void log(const QString &msg) {
-        if (m_logBuffer) m_logBuffer->append(msg);
+        if (m_logFunc) m_logFunc(msg);
     }
 
     QTcpSocket *m_client = nullptr;
     QTcpSocket *m_socks = nullptr;
     QString m_socksHost;
     quint16 m_socksPort = 0;
-    LogBuffer *m_logBuffer = nullptr;
-    HttpToSocksProxy *m_proxy = nullptr;
+    LogFunc m_logFunc;
 
     QByteArray m_requestBuffer;
     QByteArray m_socksBuffer;
@@ -334,36 +337,125 @@ private:
     State m_state = State::WaitingForRequest;
 };
 
-// Include the moc file for the nested class
+/**
+ * @brief Runs in worker thread: owns QTcpServer and all connection I/O
+ * so that large proxy traffic does not block the GUI thread.
+ */
+class ProxyServerRunner : public QObject
+{
+    Q_OBJECT
+public:
+    explicit ProxyServerRunner(QObject *parent = nullptr) : QObject(parent) {}
+
+public slots:
+    bool startListen(quint16 httpPort, const QString &socksHost, quint16 socksPort) {
+        m_socksHost = socksHost;
+        m_socksPort = socksPort;
+        m_httpPort = httpPort;
+
+        if (!m_server) {
+            m_server = new QTcpServer(this);
+            connect(m_server, &QTcpServer::newConnection, this, &ProxyServerRunner::onNewConnection);
+        }
+        if (m_server->isListening())
+            m_server->close();
+        for (HttpToSocksProxy::ClientConnection *conn : m_connections) {
+            conn->deleteLater();
+        }
+        m_connections.clear();
+
+        if (!m_server->listen(QHostAddress::LocalHost, httpPort))
+            return false;
+        return true;
+    }
+
+    void stopListen() {
+        if (m_server && m_server->isListening())
+            m_server->close();
+        for (HttpToSocksProxy::ClientConnection *conn : m_connections) {
+            conn->deleteLater();
+        }
+        m_connections.clear();
+    }
+
+signals:
+    void logRequested(const QString &message);
+
+private slots:
+    void onNewConnection() {
+        while (m_server->hasPendingConnections()) {
+            QTcpSocket *clientSocket = m_server->nextPendingConnection();
+            auto logFunc = [this](const QString &msg) { emit logRequested(msg); };
+            auto *conn = new HttpToSocksProxy::ClientConnection(
+                clientSocket, m_socksHost, m_socksPort, logFunc, this);
+            m_connections.append(conn);
+
+            connect(conn, &HttpToSocksProxy::ClientConnection::finished, this, [this, conn]() {
+                m_connections.removeOne(conn);
+                conn->deleteLater();
+            });
+        }
+    }
+
+private:
+    QTcpServer *m_server = nullptr;
+    QString m_socksHost;
+    quint16 m_socksPort = 0;
+    quint16 m_httpPort = 0;
+    QList<HttpToSocksProxy::ClientConnection*> m_connections;
+};
+
+// Include the moc file for the nested class and ProxyServerRunner
 #include "HttpToSocksProxy.moc"
 
 HttpToSocksProxy::HttpToSocksProxy(QObject *parent)
     : QObject(parent)
-    , m_server(new QTcpServer(this))
 {
-    connect(m_server, &QTcpServer::newConnection, this, &HttpToSocksProxy::onNewConnection);
 }
 
 HttpToSocksProxy::~HttpToSocksProxy() {
     stop();
+    if (m_thread) {
+        m_thread->quit();
+        if (!m_thread->wait(3000))
+            m_thread->terminate();
+        delete m_runner;
+        m_runner = nullptr;
+        m_thread = nullptr;
+    }
 }
 
 bool HttpToSocksProxy::start(quint16 httpPort, const QString &socksHost, quint16 socksPort) {
-    if (m_server->isListening()) {
+    if (m_running)
         stop();
-    }
 
     m_socksHost = socksHost;
     m_socksPort = socksPort;
     m_httpPort = httpPort;
 
-    if (!m_server->listen(QHostAddress::LocalHost, httpPort)) {
-        log(QStringLiteral("[HTTP2SOCKS] Failed to start on port %1: %2")
-            .arg(httpPort).arg(m_server->errorString()));
-        emit error(m_server->errorString());
+    if (!m_thread) {
+        m_thread = new QThread(this);
+        m_runner = new ProxyServerRunner();
+        m_runner->moveToThread(m_thread);
+        connect(static_cast<ProxyServerRunner *>(m_runner), &ProxyServerRunner::logRequested, this, &HttpToSocksProxy::onLogFromWorker, Qt::QueuedConnection);
+        m_thread->start();
+    }
+
+    bool ok = false;
+    const bool invoked = QMetaObject::invokeMethod(m_runner, "startListen",
+        Qt::BlockingQueuedConnection,
+        Q_RETURN_ARG(bool, ok),
+        Q_ARG(quint16, httpPort),
+        Q_ARG(QString, socksHost),
+        Q_ARG(quint16, socksPort));
+    if (!invoked || !ok) {
+        if (invoked)
+            log(QStringLiteral("[HTTP2SOCKS] Failed to start on port %1").arg(httpPort));
+        emit error(tr("HTTP proxy failed to start"));
         return false;
     }
 
+    m_running = true;
     log(QStringLiteral("[HTTP2SOCKS] Started HTTP proxy on 127.0.0.1:%1, forwarding to SOCKS5 %2:%3")
         .arg(httpPort).arg(socksHost).arg(socksPort));
     emit started();
@@ -371,37 +463,20 @@ bool HttpToSocksProxy::start(quint16 httpPort, const QString &socksHost, quint16
 }
 
 void HttpToSocksProxy::stop() {
-    if (m_server->isListening()) {
-        m_server->close();
-    }
-
-    // Close all connections
-    for (ClientConnection *conn : m_connections) {
-        conn->deleteLater();
-    }
-    m_connections.clear();
-
+    if (!m_running || !m_runner)
+        return;
+    QMetaObject::invokeMethod(m_runner, "stopListen", Qt::BlockingQueuedConnection);
+    m_running = false;
     log(QStringLiteral("[HTTP2SOCKS] Stopped"));
     emit stopped();
 }
 
-bool HttpToSocksProxy::isRunning() const {
-    return m_server->isListening();
-}
-
-void HttpToSocksProxy::onNewConnection() {
-    while (m_server->hasPendingConnections()) {
-        QTcpSocket *clientSocket = m_server->nextPendingConnection();
-        auto *conn = new ClientConnection(clientSocket, m_socksHost, m_socksPort, m_logBuffer, this);
-        m_connections.append(conn);
-
-        connect(conn, &ClientConnection::finished, this, [this, conn]() {
-            m_connections.removeOne(conn);
-            conn->deleteLater();
-        });
-    }
+void HttpToSocksProxy::onLogFromWorker(const QString &message) {
+    if (m_logBuffer)
+        m_logBuffer->append(message);
 }
 
 void HttpToSocksProxy::log(const QString &message) {
-    if (m_logBuffer) m_logBuffer->append(message);
+    if (m_logBuffer)
+        m_logBuffer->append(message);
 }
