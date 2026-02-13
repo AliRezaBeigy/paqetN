@@ -303,7 +303,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             build-essential cmake ninja-build pkg-config python3 \
-            libgl1-mesa-dev libglib2.0-dev libfontconfig1-dev \
+            libgl1-mesa-dev libglib2.0-dev libfontconfig1-dev libfreetype6-dev \
             libxkbcommon-dev libxkbcommon-x11-dev \
             libxcb1-dev libxcb-cursor-dev libxcb-glx0-dev \
             libxcb-keysyms1-dev libxcb-image0-dev libxcb-shm0-dev \
@@ -360,13 +360,14 @@ jobs:
           rm -f ${QT_SRC_DIR}.tar.xz
           cd ${QT_SRC_DIR}
 
-          # Configure Qt for static build
-          # Skip all modules not needed by the project to save disk space and build time
+          # Configure Qt for static build: fontconfig uses system fonts (no font dir / text corruption)
+          # -system-freetype required when using -fontconfig
           ./configure -static -release -opensource -confirm-license \
             -prefix "${QT_INSTALL_PREFIX}" \
             -cmake-generator "Ninja" \
             -xcb \
             -no-icu \
+            -fontconfig -system-freetype \
             -skip qtwebengine -skip qtmultimedia -skip qt3d -skip qtspeech -skip qtsensors -skip qtserialbus \
             -skip qtwebchannel -skip qtwebview -skip qtdoc -skip qttools -skip qttranslations \
             -skip qtcharts -skip qtlocation -skip qtpositioning -skip qtserialport \
@@ -379,7 +380,7 @@ jobs:
             -skip qtwayland -skip qtvirtualkeyboard -skip qthttpserver -skip qtlottie \
             -skip qtimageformats \
             -nomake examples -nomake tests \
-            -qt-zlib -qt-libpng -qt-libjpeg -qt-pcre -qt-harfbuzz -qt-freetype \
+            -qt-zlib -qt-libpng -qt-libjpeg -qt-pcre -qt-harfbuzz \
             -no-feature-system-libb2 \
             -no-feature-brotli \
             -optimize-size || exit 1
@@ -487,37 +488,22 @@ jobs:
           echo "Single executable created: package/paqetN"
           ls -lh package/paqetN
 
-          # Wrapper script: set QT_QPA_FONTDIR so Qt finds system fonts (no fontconfig build needed)
-          cat > package/paqetn <<'WRAPPER'
-          #!/bin/sh
-          export QT_QPA_FONTDIR="${QT_QPA_FONTDIR:-/usr/share/fonts}"
-          exec "$(dirname "$0")/paqetN" "$@"
-          WRAPPER
-          sed -i 's/^          //' package/paqetn
-          chmod +x package/paqetn
-
-          # Create zip archive (wrapper + binary; user runs ./paqetn)
+          # Create zip archive
           cd package
-          zip paqetN-${VERSION}-linux-amd64.zip paqetn paqetN
+          zip paqetN-${VERSION}-linux-amd64.zip paqetN
           echo "Linux zip created:"
           ls -lh paqetN-${VERSION}-linux-amd64.zip
           cd ..
 
-          # Build .deb package: binary as paqetn.bin, wrapper as paqetn so Exec=paqetn sets font dir
+          # Build .deb package
           DEB_DIR=paqetn_${VERSION}_amd64
           mkdir -p ${DEB_DIR}/DEBIAN
           mkdir -p ${DEB_DIR}/usr/bin
           mkdir -p ${DEB_DIR}/usr/share/applications
           mkdir -p ${DEB_DIR}/usr/share/icons/hicolor/256x256/apps
 
-          cp package/paqetN ${DEB_DIR}/usr/bin/paqetn.bin
-          cat > ${DEB_DIR}/usr/bin/paqetn <<'WRAPPER'
-          #!/bin/sh
-          export QT_QPA_FONTDIR="${QT_QPA_FONTDIR:-/usr/share/fonts}"
-          exec /usr/bin/paqetn.bin "$@"
-          WRAPPER
-          sed -i 's/^          //' ${DEB_DIR}/usr/bin/paqetn
-          chmod +x ${DEB_DIR}/usr/bin/paqetn ${DEB_DIR}/usr/bin/paqetn.bin
+          cp package/paqetN ${DEB_DIR}/usr/bin/paqetn
+          chmod +x ${DEB_DIR}/usr/bin/paqetn
 
           cat > ${DEB_DIR}/DEBIAN/control <<EOF
           Package: paqetn
@@ -525,6 +511,7 @@ jobs:
           Section: net
           Priority: optional
           Architecture: amd64
+          Depends: libfontconfig1, libfreetype6
           Maintainer: paqetN <noreply@paqetn.dev>
           Description: paqetN proxy configuration manager
            A desktop application for managing paqet proxy configurations.

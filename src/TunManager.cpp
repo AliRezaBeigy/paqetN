@@ -290,6 +290,7 @@ void TunManager::onProcessStartedForAsync() {
 }
 
 void TunManager::onInterfacePoll() {
+#ifdef Q_OS_WIN
     if (!m_asyncStartInProgress || m_process->state() != QProcess::Running) return;
     int idx = getTunInterfaceIndex();
     if (idx <= 0) return;
@@ -302,6 +303,7 @@ void TunManager::onInterfacePoll() {
         m_logBuffer->append(QStringLiteral("[TUN] Interface detected, index: %1").arg(idx));
     if (m_logBuffer) m_logBuffer->append(QStringLiteral("[TUN] Waiting for interface initialization to complete..."));
     QTimer::singleShot(3000, this, &TunManager::onTunInterfaceReady);
+#endif
 }
 
 void TunManager::onInterfaceTimeout() {
