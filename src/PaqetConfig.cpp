@@ -11,7 +11,7 @@ static const QStringList kcpBlockList = {
     QStringLiteral("aes-192"), QStringLiteral("salsa20"), QStringLiteral("blowfish"),
     QStringLiteral("twofish"), QStringLiteral("cast5"), QStringLiteral("3des"),
     QStringLiteral("tea"), QStringLiteral("xtea"), QStringLiteral("xor"),
-    QStringLiteral("sm4"), QStringLiteral("none")
+    QStringLiteral("sm4"), QStringLiteral("none"), QStringLiteral("null")
 };
 
 static const QStringList kcpModeList = {
@@ -131,7 +131,7 @@ QString PaqetConfig::toYaml(const QString &logLevel) const {
         "socks5:\n  - listen: \"%2\"\n    username: \"\"\n    password: \"\"\n"
         "%3"
         "server:\n  addr: \"%4\"\n"
-        "transport:\n  protocol: \"kcp\"\n  conn: %5\n  kcp:\n    mode: \"%6\"\n    mtu: %7\n    rcvwnd: 512\n    sndwnd: 512\n    block: \"%8\"\n    key: \"%9\"%10\n"
+        "transport:\n  protocol: \"kcp\"\n  conn: %5\n  kcp:\n    mode: \"%6\"\n    mtu: %7\n    rcvwnd: 512\n    sndwnd: 128\n    block: \"%8\"\n    key: \"%9\"%10\n"
     ).arg(logLevel, c.socksListen, networkSection, c.serverAddr).arg(c.conn)
      .arg(c.kcpMode).arg(c.mtu).arg(c.kcpBlock).arg(c.kcpKey).arg(manualParams);
 }

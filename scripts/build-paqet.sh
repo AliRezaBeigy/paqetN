@@ -22,5 +22,5 @@ esac
 GOARCH=amd64
 OUTPUT="$BUILD_DIR/paqet"
 echo "Building paqet for $GOOS/$GOARCH into $OUTPUT"
-(cd "$PAQET_SRC" && GOOS=$GOOS GOARCH=$GOARCH go build -o "$OUTPUT" ./cmd/...)
+(cd "$PAQET_SRC" && GOOS=$GOOS GOARCH=$GOARCH go build -o "$OUTPUT" ./cmd)
 echo "Done. Copy $OUTPUT next to your app executable."

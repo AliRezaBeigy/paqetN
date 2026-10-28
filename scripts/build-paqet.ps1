@@ -21,7 +21,7 @@ $env:GOARCH = "amd64"
 $Output = Join-Path $OutDir "paqet.exe"
 Write-Host "Building paqet for windows/amd64 into $Output" -ForegroundColor Cyan
 Push-Location $PaqetSrc
-go build -o $Output ./cmd/...
+go build -o $Output ./cmd
 $exitCode = $LASTEXITCODE
 Pop-Location
 if ($exitCode -eq 0) { Write-Host "Done. Copy $Output next to apppaqetN.exe." -ForegroundColor Green }
